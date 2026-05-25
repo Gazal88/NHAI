@@ -1,11 +1,7 @@
 """
 train_liveness.py — MobileNetV3-Small Liveness Classifier
 Hackathon 7.0 | ML Lead (Person 1)
-
-Dataset: CelebA-Spoof
-Task: Binary classification — real face (1) vs spoof (0)
-Hardware: RTX 4050 6GB VRAM, CUDA 12.1, PyTorch 2.x
-Target: > 95% TPR, > 93% TNR, < 4 MB TFLite INT8
+FIXED VERSION — correct train/val split
 """
 
 import os
@@ -13,14 +9,14 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, models
 from torch.utils.tensorboard import SummaryWriter
 from PIL import Image
 import numpy as np
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-DATASET_ROOT  = "./data/CelebA_Spoof"   # adjust to your actual path
+DATASET_ROOT   = "./data/CelebA_Spoof"
 CHECKPOINT_DIR = "./checkpoints/liveness"
 LOG_DIR        = "./logs/liveness"
 BATCH_SIZE     = 64
@@ -37,34 +33,11 @@ torch.manual_seed(SEED)
 
 # ─── DATASET ──────────────────────────────────────────────────────────────────
 class CelebASpoofDataset(Dataset):
-    """
-    Expects folder structure:
-        DATASET_ROOT/
-            real/   ← label 1
-            spoof/  ← label 0
-    """
     EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 
-    def __init__(self, root, transform=None):
-        self.samples = []
+    def __init__(self, samples, transform=None):
+        self.samples = samples
         self.transform = transform
-
-        for label, folder in [(1, "real"), (0, "spoof")]:
-            folder_path = os.path.join(root, folder)
-            if not os.path.isdir(folder_path):
-                raise FileNotFoundError(
-                    f"Expected folder: {folder_path}\n"
-                    f"Make sure CelebA-Spoof is extracted with real/ and spoof/ subfolders."
-                )
-            for fname in os.listdir(folder_path):
-                if os.path.splitext(fname)[1].lower() in self.EXTENSIONS:
-                    self.samples.append((os.path.join(folder_path, fname), label))
-
-        print(f"Dataset loaded: {len(self.samples)} images")
-        real_count  = sum(1 for _, l in self.samples if l == 1)
-        spoof_count = sum(1 for _, l in self.samples if l == 0)
-        print(f"  Real:  {real_count}")
-        print(f"  Spoof: {spoof_count}")
 
     def __len__(self):
         return len(self.samples)
@@ -77,13 +50,36 @@ class CelebASpoofDataset(Dataset):
         return img, torch.tensor(label, dtype=torch.float32)
 
 
+def load_all_samples(root):
+    """Load all image paths and labels from root/real and root/spoof."""
+    EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
+    samples = []
+    for label, folder in [(1, "real"), (0, "spoof")]:
+        folder_path = os.path.join(root, folder)
+        if not os.path.isdir(folder_path):
+            raise FileNotFoundError(f"Folder not found: {folder_path}")
+        for fname in os.listdir(folder_path):
+            if os.path.splitext(fname)[1].lower() in EXTENSIONS:
+                samples.append((os.path.join(folder_path, fname), label))
+
+    # Shuffle before splitting
+    import random
+    random.seed(SEED)
+    random.shuffle(samples)
+
+    real_count  = sum(1 for _, l in samples if l == 1)
+    spoof_count = sum(1 for _, l in samples if l == 0)
+    print(f"Total samples: {len(samples)} | Real: {real_count} | Spoof: {spoof_count}")
+    return samples
+
+
 # ─── TRANSFORMS ───────────────────────────────────────────────────────────────
 train_transform = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.RandomHorizontalFlip(),
     transforms.RandomRotation(15),
     transforms.ColorJitter(brightness=0.3, contrast=0.2, saturation=0.2),
-    transforms.GaussianBlur(kernel_size=3, sigma=(0.0, 1.5)),
+    transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.5)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225]),
@@ -100,35 +96,40 @@ val_transform = transforms.Compose([
 # ─── MODEL ────────────────────────────────────────────────────────────────────
 def build_model():
     model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1)
-    # Replace classifier head: 576 → 1 (binary)
     in_features = model.classifier[3].in_features
     model.classifier[3] = nn.Linear(in_features, 1)
     return model
 
 
-# ─── TRAIN LOOP ───────────────────────────────────────────────────────────────
+# ─── TRAIN ────────────────────────────────────────────────────────────────────
 def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
     if device.type == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    # Dataset + split
-    full_dataset = CelebASpoofDataset(DATASET_ROOT, transform=train_transform)
-    val_size  = int(len(full_dataset) * VAL_SPLIT)
-    train_size = len(full_dataset) - val_size
-    train_ds, val_ds = random_split(
-        full_dataset, [train_size, val_size],
-        generator=torch.Generator().manual_seed(SEED)
-    )
-    # Val set uses val_transform — patch it
-    val_ds.dataset = CelebASpoofDataset(DATASET_ROOT, transform=val_transform)
-    val_ds.indices = list(range(train_size, len(full_dataset)))
+    # Load and split samples
+    all_samples = load_all_samples(DATASET_ROOT)
+    val_size    = int(len(all_samples) * VAL_SPLIT)
+    train_size  = len(all_samples) - val_size
+
+    train_samples = all_samples[:train_size]
+    val_samples   = all_samples[train_size:]
+
+    print(f"Train: {len(train_samples)} | Val: {len(val_samples)}")
+
+    # Verify both classes exist in val set
+    val_real  = sum(1 for _, l in val_samples if l == 1)
+    val_spoof = sum(1 for _, l in val_samples if l == 0)
+    print(f"Val real: {val_real} | Val spoof: {val_spoof}")
+
+    train_ds = CelebASpoofDataset(train_samples, transform=train_transform)
+    val_ds   = CelebASpoofDataset(val_samples,   transform=val_transform)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
-                              num_workers=4, pin_memory=True)
+                              num_workers=0, pin_memory=True)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False,
-                              num_workers=4, pin_memory=True)
+                              num_workers=0, pin_memory=True)
 
     model     = build_model().to(device)
     criterion = nn.BCEWithLogitsLoss()
@@ -186,8 +187,8 @@ def train():
 
         val_acc  = val_correct / val_total
         val_loss = val_loss / val_total
-        tpr = tp / (tp + fn + 1e-9)   # sensitivity (real face detection rate)
-        tnr = tn / (tn + fp + 1e-9)   # specificity (spoof rejection rate)
+        tpr = tp / (tp + fn + 1e-9)
+        tnr = tn / (tn + fp + 1e-9)
         elapsed = time.time() - t0
 
         scheduler.step()
@@ -200,11 +201,9 @@ def train():
         )
 
         writer.add_scalars("Accuracy", {"train": train_acc, "val": val_acc}, epoch)
-        writer.add_scalars("Loss", {"train": train_loss, "val": val_loss}, epoch)
         writer.add_scalar("TPR", tpr, epoch)
         writer.add_scalar("TNR", tnr, epoch)
 
-        # ── CHECKPOINT ──
         if epoch % CHECKPOINT_EVERY == 0:
             ckpt_path = os.path.join(CHECKPOINT_DIR, f"liveness_epoch{epoch:02d}.pth")
             torch.save(model.state_dict(), ckpt_path)
@@ -213,7 +212,7 @@ def train():
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), best_ckpt)
-            print(f"  ✅ New best model saved (val_acc={val_acc:.4f})")
+            print(f"  Best model saved (val_acc={val_acc:.4f})")
 
     writer.close()
     print(f"\nTraining complete. Best val accuracy: {best_val_acc:.4f}")
@@ -223,4 +222,4 @@ def train():
 
 if __name__ == "__main__":
     best_ckpt = train()
-    print(f"\nNext step: run export_liveness.py --checkpoint {best_ckpt}")
+    print(f"\nNext: python training/liveness/export_liveness.py --checkpoint {best_ckpt}")
