@@ -1,20 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AuthScreen from './src/screens/AuthScreen';
 import SuccessScreen from './src/screens/SuccessScreen';
 import EnrollScreen from './src/screens/EnrollScreen';
+import { initDB } from './src/services/DatabaseService';
 
 export default function App() {
   const [screen, setScreen] = useState('auth');
+  const [lastWorker, setLastWorker] = useState('Field Worker');
+
+  useEffect(() => {
+    initDB().catch(console.error);
+  }, []);
 
   if (screen === 'success') {
-    return <SuccessScreen onDone={() => setScreen('auth')} />;
+    return <SuccessScreen workerName={lastWorker} onDone={() => setScreen('auth')} />;
   }
   if (screen === 'enroll') {
     return <EnrollScreen onBack={() => setScreen('auth')} />;
   }
   return (
     <AuthScreen
-      onSuccess={() => setScreen('success')}
+      onSuccess={(name) => { setLastWorker(name); setScreen('success'); }}
       onEnroll={() => setScreen('enroll')}
     />
   );

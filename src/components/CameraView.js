@@ -9,6 +9,7 @@ export default function CameraView() {
     requestPermission();
     return (
       <View style={styles.placeholder}>
+        <Text style={styles.icon}>◉</Text>
         <Text style={styles.text}>REQUESTING PERMISSION</Text>
       </View>
     );
@@ -17,7 +18,8 @@ export default function CameraView() {
   if (!device) {
     return (
       <View style={styles.placeholder}>
-        <Text style={styles.text}>NO CAMERA FOUND</Text>
+        <Text style={styles.icon}>◉</Text>
+        <Text style={styles.text}>INITIALISING SENSOR</Text>
       </View>
     );
   }
@@ -27,6 +29,7 @@ export default function CameraView() {
       style={StyleSheet.absoluteFill}
       device={device}
       isActive={true}
+      onError={(error) => console.log('Camera error:', error)}
     />
   );
 }
@@ -37,6 +40,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#D4C4A8',
+  },
+  icon: {
+    fontSize: 36,
+    color: '#A0522D',
+    marginBottom: 10,
   },
   text: {
     color: '#A0522D',
