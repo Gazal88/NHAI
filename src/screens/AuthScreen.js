@@ -63,7 +63,7 @@ export default function AuthScreen({ onSuccess, onEnroll }){
         </View>
       </View>
 
-     <TouchableOpacity style={styles.button} onPress={onSuccess} activeOpacity={0.85}>
+     <TouchableOpacity style={styles.button} onPress={() => onSuccess('Field Worker')} activeOpacity={0.85}>
         <Text style={styles.buttonText}>VERIFY IDENTITY</Text>
       </TouchableOpacity>
 

@@ -1,18 +1,43 @@
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  StatusBar, TextInput, Platform
+  StatusBar, TextInput, Platform, Alert
 } from 'react-native';
 import { useState } from 'react';
+import { enrollWorker } from '../services/DatabaseService';
 
 export default function EnrollScreen({ onBack }) {
   const [pin, setPin] = useState('');
   const [unlocked, setUnlocked] = useState(false);
   const [name, setName] = useState('');
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
 
   const checkPin = () => {
     if (pin === 'ADMIN1234') setUnlocked(true);
-    else setPin('');
+    else {
+      setPin('');
+      Alert.alert('Wrong PIN', 'Please try again.');
+    }
+  };
+
+  const handleCapture = () => {
+    if (step < 5) setStep(s => s + 1);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      Alert.alert('Missing Name', 'Please enter worker name.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await enrollWorker(name.trim());
+      Alert.alert('Success', name + ' enrolled successfully.', [
+  { text: 'OK', onPress: () => onBack() }]);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save. Try again.');
+    }
+    setSaving(false);
   };
 
   if (!unlocked) {
@@ -55,7 +80,7 @@ export default function EnrollScreen({ onBack }) {
 
       <View style={styles.frameBox}>
         <Text style={styles.frameText}>
-          {step === 0 ? 'Position face in frame' : `Frame ${step} of 5 captured`}
+          {step === 0 ? 'Position face in frame' : step < 5 ? `Frame ${step} of 5 captured` : 'All frames captured'}
         </Text>
         <View style={styles.progressRow}>
           {[1,2,3,4,5].map(i => (
@@ -65,16 +90,26 @@ export default function EnrollScreen({ onBack }) {
             />
           ))}
         </View>
+        {step > 0 && (
+          <Text style={styles.stepDone}>✓ {step}/5 complete</Text>
+        )}
       </View>
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => setStep(s => Math.min(s + 1, 5))}
-      >
-        <Text style={styles.buttonText}>
-          {step < 5 ? 'CAPTURE FRAME' : 'SAVE WORKER'}
-        </Text>
-      </TouchableOpacity>
+      {step < 5 ? (
+        <TouchableOpacity style={styles.button} onPress={handleCapture}>
+          <Text style={styles.buttonText}>CAPTURE FRAME {step + 1}</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={[styles.button, saving && styles.buttonDisabled]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          <Text style={styles.buttonText}>
+            {saving ? 'SAVING...' : 'SAVE WORKER'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity onPress={onBack}>
         <Text style={styles.back}>← Back</Text>
@@ -136,14 +171,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier New',
   },
+  stepDone: {
+    color: '#7A9E7E',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   progressRow: {
     flexDirection: 'row',
     gap: 10,
   },
   progressDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#D4C4A8',
   },
   progressDotActive: {
@@ -157,6 +197,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
     elevation: 4,
+  },
+  buttonDisabled: {
+    backgroundColor: '#C8A97E',
   },
   buttonText: {
     color: '#F5EFE6',

@@ -1,5 +1,35 @@
 # FaceAuthModule Handoff Context
+# context_day3.md | Date: 26 May 2026 | App Dev Lead
 
+## Completed Today
+- SQLite DatabaseService complete (workers + attendance tables, WAL mode)
+- Supabase SyncService complete (auto-sync on connectivity, retry, purge on ACK)
+- EnrollScreen saves real worker data to SQLite
+- All 3 screens navigating correctly
+- Camera working (shows emulator feed, will show real face on physical device)
+- ModelBridge.js shell created ready for Person 1 models
+- assets/models/ folder created for TFLite files
+
+## Working
+- Auth → Success navigation
+- Enroll → PIN check → 5-frame capture → SQLite save
+- Supabase sync triggers on connectivity
+- Camera live feed
+
+## Pending
+- Real TFLite model inference (waiting for Person 1 models)
+- MediaPipe gesture detection
+- iOS EAS build
+- Physical phone testing
+
+## For Person 1
+- Need: blazeface.tflite, facemesh.tflite, liveness.tflite, recognition.tflite
+- Place in /ml/models/tflite/ and message me
+- I will copy to assets/models/ and wire the bridges
+
+## Tomorrow
+- Wire gesture detection (blink + head turn)
+- OR start iOS EAS build while waiting for models
 
 
 # context_day2.md | Date: 25 May 2026 | App Dev Lead
