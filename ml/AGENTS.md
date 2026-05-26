@@ -60,3 +60,6 @@ Models in /ml/models/tflite/: None yet
 - Created ml/ folder structure
 - Created AGENTS.md and CONTEXT.md
 - Ready to begin Day 1-2 tasks: GPU verify, dependency install, model downloads
+Last completed: INT-2 — all 4 TFLite models exported and pushed
+Working on: Benchmark script (Days 9-10)
+Models in /ml/models/tflite/: blazeface, facemesh, liveness, mobilefacenet

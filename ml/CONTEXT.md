@@ -97,3 +97,19 @@
 - Supabase chosen as AWS prototype (Apache 2.0, one config file to swap)
 - iOS testing: Appetize.io (no Mac available)
 - CoreML conversion is best-effort — TFLite runs on iOS natively via react-native-fast-tflite
+
+
+# CONTEXT.md — Day 5-6
+
+## Completed
+- All 4 TFLite models exported and pushed (INT-1, INT-2 done)
+- Benchmark complete — report in ml/benchmarks/benchmark_report.md
+- Total size: 8.59 MB | Pipeline: ~118 ms | Liveness: 100% TPR/TNR
+
+## Next session (Day 7-8)
+- Run gesture algorithms test: python training/gesture_algorithms.py
+- Run CLAHE test: python training/clahe_preprocessing.py
+- Push gesture + CLAHE results for Person 2
+
+## Tell Person 2
+- INT-4 done — benchmark_report.md is ready, use numbers for PPT
