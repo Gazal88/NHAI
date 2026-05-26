@@ -89,6 +89,7 @@ android {
 
     namespace "com.faceauthmodule"
     defaultConfig {
+        missingDimensionStrategy 'react-native-camera-kit', 'general'
         applicationId "com.faceauthmodule"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion

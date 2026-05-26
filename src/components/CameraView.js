@@ -1,11 +1,33 @@
 import { StyleSheet, View, Text } from 'react-native';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 
 export default function CameraView() {
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const device = useCameraDevice('front');
+
+  if (!hasPermission) {
+    requestPermission();
+    return (
+      <View style={styles.placeholder}>
+        <Text style={styles.text}>REQUESTING PERMISSION</Text>
+      </View>
+    );
+  }
+
+  if (!device) {
+    return (
+      <View style={styles.placeholder}>
+        <Text style={styles.text}>NO CAMERA FOUND</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.placeholder}>
-      <Text style={styles.icon}>◉</Text>
-      <Text style={styles.text}>INITIALISING SENSOR</Text>
-    </View>
+    <Camera
+      style={StyleSheet.absoluteFill}
+      device={device}
+      isActive={true}
+    />
   );
 }
 
@@ -15,11 +37,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#D4C4A8',
-  },
-  icon: {
-    fontSize: 36,
-    color: '#A0522D',
-    marginBottom: 10,
   },
   text: {
     color: '#A0522D',
