@@ -3,13 +3,16 @@ import AuthScreen from './src/screens/AuthScreen';
 import SuccessScreen from './src/screens/SuccessScreen';
 import EnrollScreen from './src/screens/EnrollScreen';
 import { initDB } from './src/services/DatabaseService';
+import { syncWhenOnline } from './src/services/SyncService';
 
 export default function App() {
   const [screen, setScreen] = useState('auth');
   const [lastWorker, setLastWorker] = useState('Field Worker');
 
-  useEffect(() => {
-    initDB().catch(console.error);
+ useEffect(() => {
+    initDB()
+      .then(() => syncWhenOnline())
+      .catch((e) => console.log('DB error:', e));
   }, []);
 
   if (screen === 'success') {
