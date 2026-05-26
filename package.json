@@ -3,10 +3,17 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
+    "@react-native-community/netinfo": "^12.0.1",
+    "@supabase/supabase-js": "^2.106.1",
     "expo": "~56.0.4",
+    "expo-location": "~56.0.13",
+    "expo-secure-store": "~56.0.4",
+    "expo-sqlite": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
-    "react-native": "0.85.3"
+    "react-native": "0.85.3",
+    "react-native-fast-tflite": "^3.0.1",
+    "react-native-vision-camera": "^5.0.10"
   },
   "publishConfig": {
     "executableFiles": [
