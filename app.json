@@ -7,6 +7,13 @@
       "expo-sqlite",
       "expo-secure-store",
       "react-native-vision-camera"
-    ]
+    ],
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    }
   }
 }

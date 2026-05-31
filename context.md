@@ -1,175 +1,380 @@
-# FaceAuthModule Handoff Context
-# context_day3.md | Date: 26 May 2026 | App Dev Lead
+# context.md - FaceAuthModule Current Handoff
 
-## Completed Today
-- SQLite DatabaseService complete (workers + attendance tables, WAL mode)
-- Supabase SyncService complete (auto-sync on connectivity, retry, purge on ACK)
-- EnrollScreen saves real worker data to SQLite
-- All 3 screens navigating correctly
-- Camera working (shows emulator feed, will show real face on physical device)
-- ModelBridge.js shell created ready for Person 1 models
-- assets/models/ folder created for TFLite files
+Date: 30 May 2026
+Project: FaceAuthModule
+Hackathon: Hackathon 7.0
+Role: Person 2 - App Dev Lead
+Repo branch: app/person2
+Remote: https://github.com/Gazal88/NHAI.git
 
-## Working
-- Auth → Success navigation
-- Enroll → PIN check → 5-frame capture → SQLite save
-- Supabase sync triggers on connectivity
-- Camera live feed
+## One Line Status
+The app is now a usable Android prototype with launch screen, worker/admin login, SQLite, model assets, defensive camera/model loading, live liveness + embedding inference, embedding-based enrollment/verify checks, history, sync fallback, and account/logout flow. It still needs real FaceMesh gesture validation, BlazeFace cropping, threshold validation, and full device testing.
 
-## Pending
-- Real TFLite model inference (waiting for Person 1 models)
-- MediaPipe gesture detection
-- iOS EAS build
-- Physical phone testing
+## Source Documents / PRD
+- `C:\Users\hp\Downloads\hackathon_doc7.pdf`
+- `C:\Users\hp\Downloads\Person2_AppDev_Workplan.docx`
+- `C:\Users\hp\Downloads\files (2)\Hackathon7_PRD_Final.docx`
 
-## For Person 1
-- Need: blazeface.tflite, facemesh.tflite, liveness.tflite, recognition.tflite
-- Place in /ml/models/tflite/ and message me
-- I will copy to assets/models/ and wire the bridges
+Core PRD requirements:
+- React Native Android + iOS prototype.
+- Offline face recognition.
+- Offline liveness detection.
+- Active anti-spoofing such as blink, smile, or head turn.
+- Model bundle around 20 MB or less.
+- Recognition + liveness under 1 second on mid-range devices.
+- Android 8+, iOS 12+, minimum 3 GB RAM.
+- Accuracy target above 95%.
+- Works outdoors and across diverse Indian demographics.
+- Sync/purge when network returns.
+- Submit source, PPT/PDF, docs, architecture, integration steps, benchmarks.
 
-## Tomorrow
-- Wire gesture detection (blink + head turn)
-- OR start iOS EAS build while waiting for models
+## Current Stack
+- Expo SDK 56.0.4
+- React Native 0.85.3
+- React 19.2.3
+- Navigation: `@react-navigation/native`, bottom tabs
+- Camera: `react-native-vision-camera` v4
+- TFLite: `react-native-fast-tflite` v3
+- Frame resize: `vision-camera-resize-plugin`
+- Worklets: `react-native-worklets-core`
+- SQLite: `expo-sqlite`
+- GPS: `expo-location`
+- Secure storage installed: `expo-secure-store`
+- Sync: `@supabase/supabase-js`, `@react-native-community/netinfo`
 
+## Current App Flow
+1. App opens to `LaunchScreen`.
+2. `App.js` initializes SQLite first.
+3. App restores saved `employee_id` from `app_config` if available.
+4. First usable page is `OnboardingScreen`.
+5. Login modes:
+   - Worker login: Employee ID + worker passcode.
+   - Admin login: Admin PIN.
+6. Worker tabs:
+   - Verify
+   - Enroll
+   - History
+   - Account
+7. Admin tabs:
+   - Enroll
+   - History
+   - Account
+   - No Verify tab, because admin may not be a field worker.
+8. Account tab supports Switch Worker / Exit Admin.
 
-# context_day2.md | Date: 25 May 2026 | App Dev Lead
+## Demo Credentials
+Worker:
+- Employee ID: `EMP001`
+- Passcode: `1234`
+- Name: Rajesh Kumar
+- Department: Engineering
 
-## Completed Today
-- Fixed Java version conflict (Java 17 installed)
-- App running on Android emulator (Pixel 6 API 37)
-- Auth screen built with brown/beige theme
-- Success screen built with navigation
-- Enroll screen built with PIN + frame capture UI
-- 3-screen navigation working in App.js
+Admin:
+- PIN: `ADMIN1234`
 
-## Screens Done
-- AuthScreen — camera placeholder, liveness/match/sync status, verify + enroll buttons
-- SuccessScreen — verified result with name, time, date, confidence, status
-- EnrollScreen — admin PIN (ADMIN1234), worker name input, 5-frame progress dots
+## Current Model Files
+TFLite files exist in both:
+- `assets/models/`
+- `ml/models/tflite/`
 
-## What Is NOT Done Yet
-- Real camera not wired (vision-camera error pending fix)
-- No real model inference yet
-- No SQLite storage yet
-- No Supabase sync yet
+Files:
+- `blazeface.tflite` - 229,032 bytes
+- `facemesh.tflite` - 1,242,398 bytes
+- `liveness.tflite` - 1,709,800 bytes
+- `mobilefacenet.tflite` - 2,894,904 bytes
 
-## Tomorrow
-- Fix react-native-vision-camera error
-- Wire real camera feed into AuthScreen
-- Create GitHub repo and push everything
+Total bundle is about 6.08 MB, under the 20 MB target.
 
-## For Person 1
-- No models needed yet
-- Repo URL coming tomorrow
+## Current ModelBridge Status
+- `ModelBridge.js` lazy-requires `react-native-fast-tflite` for startup loading/logging.
+- This was done to avoid early Nitro boot crashes like:
+  `Failed to install Nitro! ReactApplicationContext.javaScriptContextHolder is null`.
+- `App.js` no longer imports `ModelBridge` at top level.
+- `App.js` calls model loading after DB/app boot using a delayed `loadAppModels`.
+- `loadModels()` attempts to load:
+  - BlazeFace
+  - FaceMesh
+  - Liveness
+  - MobileFaceNet
+- CPU delegates are passed as `[]`.
+- `runLiveness(imageData)` and `runRecognition(imageData)` remain available helper APIs.
+- No face detection post-processing exists yet.
+- No FaceMesh landmark parsing exists yet.
+- No embedding comparison exists yet.
+- `CameraView.js` now also runs live frame inference with:
+  - `react-native-worklets-core`
+  - `vision-camera-resize-plugin`
+  - `react-native-fast-tflite`
+- It resizes live frames to model input sizes, runs liveness + MobileFaceNet, and reports latest liveness score + embedding to screens.
+- This requires full native rebuild after installing dependencies.
 
+## Current Database
+SQLite DB: `faceauth.db`
 
+Tables:
+- `workers`
+  - `id TEXT PRIMARY KEY`
+  - `employee_id TEXT UNIQUE NOT NULL`
+  - `name TEXT NOT NULL`
+  - `department TEXT`
+  - `passcode TEXT`
+  - `embedding TEXT`
+  - `enrolled_at INTEGER`
+- `attendance`
+  - `id TEXT PRIMARY KEY`
+  - `worker_id TEXT NOT NULL`
+  - `employee_id TEXT NOT NULL`
+  - `worker_name TEXT`
+  - `timestamp INTEGER NOT NULL`
+  - `gps_lat REAL`
+  - `gps_lng REAL`
+  - `confidence REAL`
+  - `synced INTEGER DEFAULT 0`
+- `app_config`
+  - `key TEXT PRIMARY KEY`
+  - `value TEXT`
+- `failure_log`
+  - `id TEXT PRIMARY KEY`
+  - `type TEXT NOT NULL`
+  - `timestamp INTEGER NOT NULL`
+  - `details TEXT`
 
-<!-- Date saved: 25 May 2026 -->
+Implemented APIs:
+- `initDB()`
+- `getWorkerByEmployeeId(employeeId)`
+- `getAllWorkers()`
+- `saveWorker()`
+- `enrollWorker(employeeId, name, department, passcode, embedding)`
+- `logAttendance({ workerId, employeeId, workerName, gpsLat, gpsLng, confidence })`
+- `getAttendanceHistory(limit)`
+- `getRecentAttendance(limit)`
+- `getPendingCount()`
+- `getUnsyncedCount()`
+- `getUnsyncedAttendance()`
+- `getUnsyncedRecords()`
+- `markSynced(ids)`
+- `deleteSynced()`
+- `logFailure(type, details)`
+- `getFailureLog(limit)`
+- `setConfig(key, value)`
+- `getConfig(key)`
+- `deleteConfig(key)`
 
-Read `AGENTS.md` first before coding. Important instruction there:
-read the exact Expo v56 docs at https://docs.expo.dev/versions/v56.0.0/ before writing app code.
+## Current Screens
+- `LaunchScreen.js`
+  - FaceAuth branded launch/loading screen.
+- `OnboardingScreen.js`
+  - Worker/admin mode selector.
+  - Worker login with employee ID + passcode.
+  - Admin login with PIN.
+- `AuthScreen.js`
+  - Worker dashboard.
+  - Good Morning/Afternoon/Evening greeting.
+  - Worker name and initials profile badge.
+  - Pending count badge.
+  - Mounts `CameraView`.
+- Current Verify flow shows a random active liveness prompt before capture.
+- Challenge options: blink, turn left, turn right, smile.
+- The challenge is currently a UI gate only; it still needs FaceMesh/liveness-model validation.
+- After challenge is armed, Verify captures a photo, requires live model output, checks liveness score, checks stored worker embedding, and only logs attendance on match.
+  - GPS is attempted through `expo-location`.
+  - Logs failures to `failure_log`.
+  - Has basic failed-attempt count and short lockout.
+- Important gap: it asks for blink/turn/smile, but does not yet detect that gesture from model output.
+- `CameraView.js`
+  - Defensive VisionCamera wrapper.
+  - Lazy-requires `react-native-vision-camera`.
+  - Shows fallback if camera module is unavailable, permission missing, or no front camera.
+  - Exposes `capturePhoto()` through ref.
+- `EnrollScreen.js`
+  - Worker enrollment form.
+  - Admin PIN flow when opened from worker mode.
+  - Admin mode skips PIN.
+  - Requires name, employee ID, optional department, worker passcode.
+  - Simulates 5-frame capture.
+  - Saves worker to SQLite.
+- Important gap: does not capture real frames or create embedding yet.
+- Duplicate guard now blocks same normalized worker name.
+- Duplicate face guard exists in `DatabaseService.findPotentialDuplicateWorker()` and will block when embeddings are supplied.
+- Enroll now mounts live camera inference and captures 5 live embeddings, averages them, and stores the average in `workers.embedding`.
+- `HistoryScreen.js`
+  - Reads SQLite attendance.
+  - Pull-to-refresh.
+  - Shows pending/synced counts.
+  - Shows recent failure issues.
+- `AccountScreen.js`
+  - Shows current worker/admin session.
+  - Switch Worker / Exit Admin.
+- `BottomNav.js`
+  - Custom React Navigation tab bar.
+- `SuccessScreen.js`
+  - Exists but is not currently central to navigation.
 
-## Current Project Status
+## Current Sync
+- `SyncService.js` listens to NetInfo.
+- Uses `syncInProgress` guard.
+- Uploads unsynced attendance to Supabase.
+- Marks synced and deletes local synced rows after success.
+- Has fallback for old Supabase schema missing `employee_id`.
+- Important gap: remote Supabase attendance table should still be updated properly.
 
-Project is still present at:
+## Native / Config State
+- `metro.config.js` includes `.tflite` asset extension.
+- `app.json` includes:
+  - `expo-sqlite`
+  - `expo-secure-store`
+  - `react-native-vision-camera`
+  - Android permissions: Camera, coarse location, fine location.
+- `android/app/src/main/AndroidManifest.xml` includes:
+  - Camera permission
+  - Record audio permission
+  - Coarse location permission
+  - Fine location permission
 
-`C:\Users\hp\FaceAuthModule`
+## Verified By Codex
+On 30 May 2026:
+- `node --check` passed for `App.js`.
+- `node --check` passed for all `src/**/*.js`.
+- `app.json` parsed successfully.
+- Model files exist in `assets/models`.
+- Expo SDK 56 docs were checked as required by `AGENTS.md`.
 
-The app is not lost. The Android build was interrupted/blocked, but the repo, dependencies, Android project, and emulator setup are still there.
+## Latest User Concern
+User correctly noticed:
+- Verify previously approved after one photo capture.
+- It did not ask for blink, tilt, smile, or any active liveness challenge.
+- It could approve the same real person under different employee names/IDs because real embeddings and duplicate matching were not implemented.
 
-## App Stack Currently Detected
+Current patch:
+- `AuthScreen.js` now shows a random active challenge before capture.
+- `DatabaseService.js` now has duplicate identity helper logic.
+- `EnrollScreen.js` now blocks duplicate worker names and is ready to surface duplicate face errors.
 
-- Expo: `~56.0.4`
-- React Native: `0.85.3`
-- React: `19.2.3`
-- `react-native-vision-camera`: `^5.0.10`
-- `react-native-fast-tflite`: `^3.0.1`
-- `expo-sqlite`: `~56.0.4`
-- `expo-secure-store`: `~56.0.4`
-- `expo-location`: `~56.0.13`
-- `@supabase/supabase-js`: `^2.106.1`
-- `@react-native-community/netinfo`: `^12.0.1`
+Still required: A UI-only challenge prompt is not enough for PRD. The real fix requires:
+- Capture frame/image.
+- Run FaceMesh or liveness model.
+- Detect blink/head turn/smile.
+- Run MobileFaceNet.
+- Compare embedding against logged-in worker.
+- During enrollment, compare new embedding against all existing worker embeddings and block duplicates above threshold.
 
-## Android/Emulator Status
+## Current High-Priority Gaps
+1. Real active gesture validation.
+   - Need random challenge: blink, turn left/right, smile.
+   - Need actual gesture detection using FaceMesh landmarks.
+   - Need timeout and failure logging.
 
-- Emulator is visible to ADB.
-- Device ID: `emulator-5554`
-- Android release: `17`
-- API level: `37`
-- Model reported: `sdk_gphone16k_x86_64`
-- Android SDK path in `android/local.properties`:
-  `C:/Users/hp/AppData/Local/Android/Sdk`
-- Installed SDK platforms visible:
-  - `android-36`
-  - `android-36.1`
+2. Real face recognition.
+   - Live MobileFaceNet embedding is wired from center-cropped frame.
+   - Need proper BlazeFace detection/crop instead of center crop.
+   - Need confirm model normalization and threshold with Person 1.
+   - Need threshold from Person 1.
 
-## Current Blocker
+3. Real enrollment quality.
+   - 5 live embeddings are captured and averaged now.
+   - Need proper face crop and quality checks.
+   - Need validate duplicate face threshold with real data.
 
-Android build is blocked by Java configuration.
+4. Camera validation on physical Vivo V30.
+   - ADB sees phone serial: `10BE6DF610008Z`.
+   - Emulator also connected: `emulator-5554`.
+   - If Expo cannot target serial using `--device`, set:
+     `set ANDROID_SERIAL=10BE6DF610008Z`
+     then run:
+     `npx expo run:android`
 
-What was checked:
+5. Supabase schema.
+   - Local schema has `employee_id`.
+   - Remote schema may not.
+   - Fallback exists but proper SQL migration is still needed.
 
-- `java -version` does not work because `java` is not on PATH.
-- `JAVA_HOME` is set to:
-  `C:\Users\hp\AppData\Local\Programs\Eclipse Adoptium\jdk-17.0.19.10-hotspot\`
-- That `JAVA_HOME` path is invalid/missing, so Gradle fails immediately.
-- `C:\Program Files\Eclipse Adoptium` was not found.
-- `C:\Program Files\Java\jdk-24` exists, but Java 24 is not the desired build JDK for this project.
+6. Documentation and demo.
+   - README, integration guide, benchmark table, PPT/PDF, demo video still needed.
 
-Gradle error seen:
+7. iOS.
+   - EAS iOS/Appetize build not done.
 
-`ERROR: JAVA_HOME is set to an invalid directory`
+## Recommended Next Work Order
+1. Rebuild Android after new native dependencies:
+   `npx expo run:android`
+2. Enroll EMP001 again so it has a real `workers.embedding`.
+3. Test Verify with the same enrolled worker.
+4. Confirm liveness output direction with Person 1.
+5. Confirm MobileFaceNet threshold with Person 1.
+6. Wire FaceMesh landmark interpretation for blink/head-turn/smile.
+7. Add BlazeFace crop instead of center crop.
+8. Update Supabase schema.
+9. Finish docs and demo video.
 
-## Next Steps Tomorrow
+## Important Commands
+Use Java 17:
+`C:\Users\hp\AppData\Local\Programs\Eclipse Adoptium\jdk-17.0.19.10-hotspot`
 
-1. Install or reinstall Temurin Java 17 from Adoptium.
-   Use Windows x64 `.msi`.
-2. Set `JAVA_HOME` to the actual installed Java 17 folder.
-   Example path:
+Start Metro clean:
+```bat
+npx expo start --clear --dev-client
+```
 
-   ```powershell
-   setx JAVA_HOME "C:\Program Files\Eclipse Adoptium\jdk-17.0.x.x-hotspot"
-   ```
+Run Android:
+```bat
+npx expo run:android
+```
 
-   Use the real folder name that exists on the machine.
+Target Vivo V30 when emulator is also attached:
+```bat
+set ANDROID_SERIAL=10BE6DF610008Z
+npx expo run:android
+```
 
-3. Add Java 17 `bin` to PATH if the installer does not do it automatically.
-4. Close and reopen the terminal.
-5. Verify:
+Check ADB:
+```bat
+adb devices
+```
 
-   ```powershell
-   java -version
-   ```
+If `adb` is not recognized:
+```bat
+%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe devices
+```
 
-   It should show Java 17.
+Focused Kotlin check:
+```bat
+cd android
+gradlew.bat :app:compileDebugKotlin --console=plain
+```
 
-6. From the repo:
+Pull ML branch:
+```bat
+git fetch origin ml/person1
+git checkout FETCH_HEAD -- ml/models/tflite
+copy ml\models\tflite\*.tflite assets\models\
+```
 
-   ```powershell
-   cd C:\Users\hp\FaceAuthModule
-   npx expo run:android
-   ```
+## Worktree Notes
+Worktree is dirty and contains active hackathon work.
 
-7. Let the first build run. It may reuse cached progress, but it may not display the old 90 percent position immediately.
+Known changed/untracked areas:
+- `AGENTS.md`
+- `context.md`
+- `App.js`
+- `app.json`
+- `android/app/src/main/AndroidManifest.xml`
+- `metro.config.js`
+- `package.json`
+- `package-lock.json`
+- `src/bridges/ModelBridge.js`
+- `src/components/CameraView.js`
+- `src/components/BottomNav.js`
+- `src/screens/LaunchScreen.js`
+- `src/screens/OnboardingScreen.js`
+- `src/screens/AuthScreen.js`
+- `src/screens/EnrollScreen.js`
+- `src/screens/HistoryScreen.js`
+- `src/screens/AccountScreen.js`
+- `src/screens/SuccessScreen.js`
+- `src/services/DatabaseService.js`
+- `src/services/SyncService.js`
+- `assets/models/`
+- `ml/models/tflite/`
+- `android/.kotlin/` generated logs
 
-## Files Changed/Uncommitted When Checked
-
-`git status --short` showed:
-
-- `M AGENTS.md`
-- `D CLAUDE.md`
-- `M android/gradle/wrapper/gradle-wrapper.properties`
-- `M app.json`
-- `M package-lock.json`
-- `M package.json`
-- `?? context.md`
-
-Do not assume these should be reverted. Treat them as user/session work unless explicitly told otherwise.
-
-## Important Note
-
-The old session log said Gradle wrapper had been changed to `8.3`, but the current file shows:
-
-`distributionUrl=https://services.gradle.org/distributions/gradle-9.3.1-bin.zip`
-
-After Java 17 is fixed, if Gradle fails, check whether this Gradle version matches Expo SDK 56 and the generated Android project requirements.
+Do not revert unrelated changes. Do not expose Supabase keys in messages or docs.

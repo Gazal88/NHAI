@@ -12,6 +12,10 @@ buildscript {
   }
 }
 
+ext {
+  ndkVersion = findProperty('android.ndkVersion') ?: '27.1.12297006'
+}
+
 allprojects {
   repositories {
     google()
