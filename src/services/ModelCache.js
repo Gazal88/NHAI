@@ -7,12 +7,10 @@
  *
  * CameraView's useTensorflowModel hook loads from the same asset paths,
  * so the native TFLite runtime reuses the already-loaded interpreter
- * instead of loading from scratch. This cuts warmup time from ~6-8s
- * to ~1-2s on mid-range devices.
+ * instead of loading from scratch. This cuts warmup time on mid-range devices.
  *
- * SAFE: uses lazy require so it never runs on web or if native modules
- * are unavailable. All errors are caught silently — the app works fine
- * even if preload fails.
+ * Uses lazy require so it never runs on web or if native modules
+ * are unavailable. All errors are caught silently.
  */
 
 let preloadStarted = false;
@@ -22,9 +20,9 @@ export function preloadModels() {
   if (preloadStarted) return;
   preloadStarted = true;
 
-  // Run async without awaiting — fire and forget
+  // Run async without awaiting
   _doPreload().catch((e) => {
-    console.log('[ModelCache] Preload error (non-fatal):', e?.message ?? e);
+    console.log('[ModelCache] Preload error:', e?.message ?? e);
   });
 }
 
@@ -56,7 +54,7 @@ async function _doPreload() {
     if (r.status === 'fulfilled') {
       console.log(`[ModelCache] ${name} preloaded ✓`);
     } else {
-      console.log(`[ModelCache] ${name} preload failed (non-fatal):`, r.reason?.message);
+      console.log(`[ModelCache] ${name} preload failed:`, r.reason?.message);
     }
   });
 }

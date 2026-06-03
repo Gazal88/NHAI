@@ -11,26 +11,17 @@ import * as Location from 'expo-location';
 import { logAttendance, logFailure, getTodayAttendanceByEmployee } from '../services/DatabaseService';
 import CameraView from '../components/CameraView.js';
 import { C, FONT, RADIUS, SHADOW } from '../theme';
+import {
+  LIVENESS_THRESHOLD,
+  RECOGNITION_THRESHOLD,
+  CHALLENGE_CONFIDENCE_MIN,
+  MAX_FAILED_ATTEMPTS,
+  LOCKOUT_MS,
+  ACTIVE_CHECK_MS,
+} from '../services/biometric.config';
 
 const SIMULATED_CONFIDENCE = 0.97;
-const MAX_FAILED_ATTEMPTS = 3;
-const LOCKOUT_MS = 60 * 1000;
-// Per Person 1: real face sigmoid > 0.65, spoof < 0.40
-const LIVENESS_THRESHOLD = 0.55;      // slightly relaxed for real camera variation
-const RECOGNITION_THRESHOLD = 0.45;  // real camera captures of same person score 0.50-0.70
-const ACTIVE_CHECK_MS = 3000;
 
-// The liveness model was trained on synthetic data and cannot reliably detect
-// motion-based gestures (blink/head turn) via score variance. Instead:
-// 1. A random gesture prompt is shown (satisfies PRD anti-spoofing requirement)
-// 2. The user has 3 seconds to perform it while keeping face in frame
-// 3. Liveness score must be > 0.65 at capture — proves real face, not photo/screen
-// This is honest: the gesture makes replay attacks harder (attacker needs a
-// video that matches the random prompt), and liveness score blocks static photos.
-const CHALLENGE_CONFIDENCE_MIN = 0.65; // minimum liveness at moment of capture
-
-// Only blink and head turns cause measurable liveness score variance.
-// Smile is excluded — it doesn't affect a binary real/spoof classifier.
 const LIVENESS_CHALLENGES = [
   {
     id: 'blink',
@@ -175,10 +166,8 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
       const scores = livenessWindowRef.current;
       console.log('[Challenge] scores during window:', scores.map(s => s.toFixed(3)).join(', '));
 
-      // Check that liveness score was consistently above threshold during the window
-      // This confirms a real face was present (not a static photo)
       const validScores = scores.filter(s => s >= CHALLENGE_CONFIDENCE_MIN);
-      const hasLivePresence = validScores.length >= 2; // at least 2 readings above threshold
+      const hasLivePresence = validScores.length >= 2;
 
       if (hasLivePresence) {
         setChallengeProgress({

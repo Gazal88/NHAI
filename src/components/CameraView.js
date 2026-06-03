@@ -2,10 +2,6 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'rea
 import { StyleSheet, View, Text } from 'react-native';
 
 // ─── Constants ────────────────────────────────────────────────────────────
-// Thresholds from Person 1's model data:
-// Liveness: raw logit → apply sigmoid → real face sigmoid > 0.65, spoof < 0.40
-// MobileFaceNet: L2-normalised output → dot product = cosine similarity
-//   same person ~0.99, different people ~0.00 to -0.18 → use 0.75
 const RECOGNITION_THRESHOLD = 0.75;
 
 const BLAZEFACE_INPUT_SIZE = 128;
@@ -32,7 +28,7 @@ function generateBlazeFaceAnchors() {
 }
 
 // ─── Worklet helpers ───────────────────────────────────────────────────────
-// Sigmoid: liveness model outputs raw logits, must convert to probability
+/** Applies sigmoid to convert raw logits to probabilities. */
 const sigmoid = (x) => {
   'worklet';
   if (x >= 0) {
@@ -231,8 +227,6 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
       }
 
       // ── Tick B: Liveness + Recognition — every 600ms ───────────────────
-      // ALWAYS uses full frame — no crop — so enroll and verify embeddings
-      // come from the same input distribution and cosine similarity works.
       if (now - lastInferenceAt.value < INFERENCE_TICK_MS) return;
       lastInferenceAt.value = now;
 
@@ -247,8 +241,7 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
           dataType:    livenessSpec.dataType,
         });
         const livenessOutput = liveness.runSync([sliceBuffer(livenessInput)]);
-        // Model outputs raw logit — apply sigmoid to get probability [0,1]
-        // Per Person 1: real face typically > 0.65, spoof < 0.40 after sigmoid
+        // Apply sigmoid to convert raw logit to probability [0,1]
         const rawLogit = firstValue(livenessOutput[0], livenessSpec.outputType);
         const livenessScore = rawLogit == null ? null : sigmoid(rawLogit);
 
