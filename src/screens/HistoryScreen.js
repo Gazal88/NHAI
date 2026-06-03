@@ -1,158 +1,160 @@
 import {
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  StatusBar,
-  Platform,
-  RefreshControl,
+  StyleSheet, Text, View, ScrollView, StatusBar,
+  RefreshControl, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
-import { useState, useEffect, useCallback } from 'react';
-import {
-  getRecentAttendance,
-  getUnsyncedCount,
-  getFailureLog,
-} from '../services/DatabaseService';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { getRecentAttendance, getAttendanceByEmployee, getUnsyncedCount, getFailureLog } from '../services/DatabaseService';
+import { syncNow, onSyncStateChange } from '../services/SyncService';
+import { C, FONT, RADIUS, SHADOW } from '../theme';
 
-export default function HistoryScreen() {
-  const [records, setRecords] = useState([]);
-  const [failures, setFailures] = useState([]);
-  const [pendingCount, setPendingCount] = useState(0);
+export default function HistoryScreen({ workerFilter = null, showSync = true, showFailures = false }) {
+  const [records, setRecords]       = useState([]);
+  const [failures, setFailures]     = useState([]);
+  const [pendingCount, setPending]  = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [dateFilter, setDateFilter] = useState('all');
+  const [syncState, setSyncState]   = useState({ syncing: false, lastSyncedCount: 0, lastSyncedAt: null, error: null });
+  const mounted = useRef(true);
 
-  const loadData = async () => {
+  const load = useCallback(async () => {
     try {
-      const data = await getRecentAttendance(20);
-      const failureData = await getFailureLog(5);
-      const pending = await getUnsyncedCount();
-      setRecords(data);
-      setFailures(failureData);
-      setPendingCount(pending);
-    } catch (e) {
-      console.log('History load error:', e);
-    }
-  };
+      let data = workerFilter
+        ? await getAttendanceByEmployee(workerFilter, 50)
+        : await getRecentAttendance(50);
+
+      if (dateFilter === 'today') {
+        const s = new Date(); s.setHours(0,0,0,0);
+        data = data.filter(r => r.timestamp >= s.getTime());
+      } else if (dateFilter === 'week') {
+        const s = new Date(); s.setDate(s.getDate()-7); s.setHours(0,0,0,0);
+        data = data.filter(r => r.timestamp >= s.getTime());
+      }
+
+      const [fails, pend] = await Promise.all([
+        showFailures ? getFailureLog(10) : Promise.resolve([]),
+        showSync ? getUnsyncedCount() : Promise.resolve(0),
+      ]);
+      if (!mounted.current) return;
+      setRecords(data); setFailures(fails); setPending(pend);
+    } catch (_) {}
+  }, [workerFilter, dateFilter, showSync, showFailures]);
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  }, []);
-
-  const formatTime = (timestamp) => {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
+    mounted.current = true;
+    load();
+    const unsub = onSyncStateChange((st) => {
+      if (!mounted.current) return;
+      setSyncState(st); load();
     });
-  };
+    return () => { mounted.current = false; unsub(); };
+  }, [load]);
 
-  const formatDate = (timestamp) => {
-    const d = new Date(timestamp);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  const onRefresh = useCallback(async () => { setRefreshing(true); await load(); setRefreshing(false); }, [load]);
 
+  const fmt = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fmtDate = (ts) => {
+    const d = new Date(ts); const today = new Date(); const yest = new Date(today);
+    yest.setDate(yest.getDate()-1);
     if (d.toDateString() === today.toDateString()) return 'Today';
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    if (d.toDateString() === yest.toDateString()) return 'Yesterday';
     return d.toLocaleDateString();
   };
 
-  const todayCount = records.filter((record) => {
-    return new Date(record.timestamp).toDateString() === new Date().toDateString();
-  }).length;
+  const todayCount  = records.filter(r => new Date(r.timestamp).toDateString() === new Date().toDateString()).length;
+  const syncedCount = records.filter(r => r.synced === 1).length;
 
-  const syncedCount = records.filter((record) => record.synced === 1).length;
+  const renderBanner = () => {
+    if (syncState.syncing) return (
+      <View style={[styles.banner, styles.bannerActive]}>
+        <ActivityIndicator size="small" color={C.primary} style={{ marginRight: 8 }} />
+        <Text style={[styles.bannerTxt, { color: C.primary }]}>Syncing to cloud…</Text>
+      </View>
+    );
+    if (syncState.error) return (
+      <View style={[styles.banner, styles.bannerError]}>
+        <Text style={[styles.bannerTxt, { color: C.errorText, flex: 1 }]}>
+          Sync failed — {syncState.error.length > 40 ? syncState.error.slice(0,40)+'…' : syncState.error}
+        </Text>
+        <TouchableOpacity onPress={syncNow} style={styles.retryBtn}><Text style={styles.retryTxt}>Retry</Text></TouchableOpacity>
+      </View>
+    );
+    if (pendingCount > 0) return (
+      <View style={[styles.banner, styles.bannerPending]}>
+        <Text style={[styles.bannerTxt, { color: C.warningText, flex: 1 }]}>{pendingCount} record{pendingCount===1?'':'s'} pending sync</Text>
+        <TouchableOpacity onPress={syncNow} style={styles.syncNowBtn}><Text style={styles.syncNowTxt}>Sync Now</Text></TouchableOpacity>
+      </View>
+    );
+    if (syncState.lastSyncedAt) return (
+      <View style={[styles.banner, styles.bannerDone]}>
+        <Text style={[styles.bannerTxt, { color: C.successText }]}>✓ All synced · {syncState.lastSyncedCount} records</Text>
+      </View>
+    );
+    return null;
+  };
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.root}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor="#5C6B3A"
-          colors={['#5C6B3A']}
-        />
-      }
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.root} showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} colors={[C.primary]} />}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="#F5F5E8" />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       <View style={styles.topBar}>
-        <Text style={styles.title}>Attendance Log</Text>
-        <View style={styles.countBadge}>
-          <Text style={styles.countText}>{records.length} records</Text>
-        </View>
+        <Text style={styles.title}>{workerFilter ? 'My Attendance' : 'Attendance Log'}</Text>
+        <View style={styles.countBadge}><Text style={styles.countTxt}>{records.length} records</Text></View>
       </View>
 
+      {/* Date filter — admin only */}
+      {!workerFilter && (
+        <View style={styles.filterRow}>
+          {['today','week','all'].map((f) => (
+            <TouchableOpacity key={f} style={[styles.filterBtn, dateFilter===f && styles.filterBtnActive]} onPress={() => setDateFilter(f)}>
+              <Text style={[styles.filterTxt, dateFilter===f && styles.filterTxtActive]}>
+                {f==='today' ? 'Today' : f==='week' ? 'This Week' : 'All Time'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Sync banner */}
+      {showSync && renderBanner()}
+
+      {/* Summary */}
       <View style={styles.summaryRow}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryVal}>{todayCount}</Text>
-          <Text style={styles.summaryLabel}>Today</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={[styles.summaryVal, { color: '#C4A35A' }]}>
-            {pendingCount}
-          </Text>
-          <Text style={styles.summaryLabel}>Pending</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={[styles.summaryVal, { color: '#5C6B3A' }]}>
-            {syncedCount}
-          </Text>
-          <Text style={styles.summaryLabel}>Synced</Text>
-        </View>
+        {[
+          { val: todayCount, label: 'Today', color: C.primary },
+          { val: pendingCount, label: 'Pending', color: C.warning },
+          { val: syncedCount, label: 'Synced', color: C.success },
+        ].map((s) => (
+          <View key={s.label} style={styles.summaryCard}>
+            <Text style={[styles.summaryVal, { color: s.color }]}>{s.val}</Text>
+            <Text style={styles.summaryLabel}>{s.label}</Text>
+          </View>
+        ))}
       </View>
 
-      <Text style={styles.sectionTitle}>Recent Records</Text>
+      <Text style={styles.sectionTitle}>Records</Text>
 
       {records.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyIcon}>--</Text>
-          <Text style={styles.emptyText}>No attendance records yet</Text>
-          <Text style={styles.emptySub}>
-            Records will appear here after authentication
-          </Text>
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No records yet</Text>
+          <Text style={styles.emptySub}>{workerFilter ? 'Your attendance will appear here.' : 'Records will appear here after check-ins.'}</Text>
         </View>
       ) : (
         records.map((item) => (
           <View key={item.id} style={styles.recordCard}>
-            <View style={styles.recordAvatar}>
-              <Text style={styles.recordAvatarText}>
-                {(item.worker_name || 'U').charAt(0).toUpperCase()}
-              </Text>
+            <View style={styles.recAvatar}>
+              <Text style={styles.recAvatarTxt}>{(item.worker_name || 'U').charAt(0).toUpperCase()}</Text>
             </View>
-            <View style={styles.recordInfo}>
-              <Text style={styles.recordName}>
-                {item.worker_name || 'Unknown'}
-              </Text>
-              <Text style={styles.recordEmpId}>{item.employee_id}</Text>
-              <Text style={styles.recordTime}>
-                {formatTime(item.timestamp)} | {formatDate(item.timestamp)}
-              </Text>
+            <View style={styles.recInfo}>
+              <Text style={styles.recName}>{item.worker_name || 'Unknown'}</Text>
+              <Text style={styles.recId}>{item.employee_id}</Text>
+              <Text style={styles.recTime}>{fmt(item.timestamp)} · {fmtDate(item.timestamp)}</Text>
             </View>
-            <View style={styles.recordRight}>
-              <Text style={styles.recordConfidence}>
-                {item.confidence ? `${(item.confidence * 100).toFixed(1)}%` : '--'}
-              </Text>
-              <View
-                style={[
-                  styles.statusPill,
-                  { backgroundColor: item.synced === 1 ? '#EEF0E8' : '#FFF3CD' },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusText,
-                    { color: item.synced === 1 ? '#5C6B3A' : '#C4A35A' },
-                  ]}
-                >
-                  {item.synced === 1 ? 'Synced' : 'Pending'}
+            <View style={styles.recRight}>
+              <View style={[styles.pill, item.synced===1 ? styles.pillDone : styles.pillPend]}>
+                <Text style={[styles.pillTxt, item.synced===1 ? { color: C.successText } : { color: C.warningText }]}>
+                  {item.synced===1 ? '✓ Synced' : 'Pending'}
                 </Text>
               </View>
             </View>
@@ -160,151 +162,64 @@ export default function HistoryScreen() {
         ))
       )}
 
-      {failures.length > 0 ? (
+      {showFailures && failures.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>Recent Issues</Text>
+          <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Recent Issues</Text>
           {failures.map((item) => (
-            <View key={item.id} style={styles.failureCard}>
-              <Text style={styles.failureType}>
-                {item.type.replace(/_/g, ' ')}
-              </Text>
-              <Text style={styles.failureTime}>
-                {formatTime(item.timestamp)} | {formatDate(item.timestamp)}
-              </Text>
+            <View key={item.id} style={styles.failCard}>
+              <Text style={styles.failType}>{item.type.replace(/_/g,' ')}</Text>
+              <Text style={styles.failTime}>{fmt(item.timestamp)} · {fmtDate(item.timestamp)}</Text>
             </View>
           ))}
         </>
-      ) : null}
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: '#F5F5E8' },
-  root: { paddingHorizontal: 20, paddingTop: 52, paddingBottom: 20 },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  title: {
-    color: '#2C3520',
-    fontSize: 26,
-    fontWeight: '800',
-    fontFamily: Platform.OS === 'android' ? 'serif' : 'Georgia',
-  },
-  countBadge: {
-    backgroundColor: '#EEF0E8',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  countText: { color: '#5C6B3A', fontSize: 12, fontWeight: '700' },
-  summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#5C6B3A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-  },
-  summaryVal: {
-    color: '#2C3520',
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  summaryLabel: { color: '#7A8A6A', fontSize: 11 },
-  sectionTitle: {
-    color: '#2C3520',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-    marginTop: 2,
-    fontFamily: Platform.OS === 'android' ? 'serif' : 'Georgia',
-  },
-  emptyBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 40,
-    alignItems: 'center',
-    elevation: 2,
-  },
-  emptyIcon: { fontSize: 26, color: '#D4DCC8', marginBottom: 12 },
-  emptyText: {
-    color: '#2C3520',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  emptySub: { color: '#A8B5A0', fontSize: 12, textAlign: 'center' },
-  recordCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
-    elevation: 2,
-    shadowColor: '#5C6B3A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-  },
-  recordAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#EEF0E8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recordAvatarText: {
-    color: '#5C6B3A',
-    fontSize: 18,
-    fontWeight: '800',
-    fontFamily: Platform.OS === 'android' ? 'serif' : 'Georgia',
-  },
-  recordInfo: { flex: 1 },
-  recordName: {
-    color: '#2C3520',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  recordEmpId: {
-    color: '#A8B5A0',
-    fontSize: 10,
-    letterSpacing: 1,
-    marginBottom: 2,
-    fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier New',
-  },
-  recordTime: { color: '#7A8A6A', fontSize: 11 },
-  recordRight: { alignItems: 'flex-end', gap: 6 },
-  recordConfidence: { color: '#5C6B3A', fontSize: 13, fontWeight: '700' },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  statusText: { fontSize: 10, fontWeight: '700' },
-  failureCard: {
-    backgroundColor: '#FFF8E8',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E7D29B',
-    marginBottom: 8,
-  },
-  failureType: {
-    color: '#7A5F1D',
-    fontSize: 12,
-    fontWeight: '800',
-    marginBottom: 3,
-    textTransform: 'capitalize',
-  },
-  failureTime: { color: '#9A854B', fontSize: 11 },
+  scroll: { flex: 1, backgroundColor: C.bg },
+  root: { paddingHorizontal: 20, paddingTop: 52, paddingBottom: 24 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  title: { color: C.textPrimary, fontSize: 26, fontWeight: FONT.extraBold },
+  countBadge: { backgroundColor: C.primaryLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.full },
+  countTxt: { color: C.primary, fontSize: 12, fontWeight: FONT.bold },
+  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  filterBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.full, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border },
+  filterBtnActive: { backgroundColor: C.primary, borderColor: C.primary },
+  filterTxt: { color: C.textSecondary, fontSize: 12, fontWeight: FONT.semiBold },
+  filterTxtActive: { color: '#FFFFFF' },
+  banner: { flexDirection: 'row', alignItems: 'center', borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 14 },
+  bannerActive: { backgroundColor: C.primaryLight },
+  bannerPending: { backgroundColor: C.warningBg },
+  bannerDone: { backgroundColor: C.successBg },
+  bannerError: { backgroundColor: C.errorBg },
+  bannerTxt: { fontSize: 13, fontWeight: FONT.semiBold },
+  syncNowBtn: { backgroundColor: C.primary, borderRadius: RADIUS.sm, paddingHorizontal: 12, paddingVertical: 6 },
+  syncNowTxt: { color: '#FFFFFF', fontSize: 12, fontWeight: FONT.extraBold },
+  retryBtn: { borderWidth: 1, borderColor: C.error, borderRadius: RADIUS.sm, paddingHorizontal: 12, paddingVertical: 6 },
+  retryTxt: { color: C.error, fontSize: 12, fontWeight: FONT.bold },
+  summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  summaryCard: { flex: 1, backgroundColor: C.surface, borderRadius: RADIUS.lg, padding: 14, alignItems: 'center', ...SHADOW.sm },
+  summaryVal: { fontSize: 24, fontWeight: FONT.extraBold, marginBottom: 2 },
+  summaryLabel: { color: C.textSecondary, fontSize: 11 },
+  sectionTitle: { color: C.textPrimary, fontSize: 15, fontWeight: FONT.bold, marginBottom: 10 },
+  empty: { backgroundColor: C.surface, borderRadius: RADIUS.lg, padding: 36, alignItems: 'center', ...SHADOW.sm },
+  emptyTitle: { color: C.textPrimary, fontSize: 15, fontWeight: FONT.bold, marginBottom: 6 },
+  emptySub: { color: C.textSecondary, fontSize: 12, textAlign: 'center' },
+  recordCard: { backgroundColor: C.surface, borderRadius: RADIUS.lg, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8, ...SHADOW.sm },
+  recAvatar: { width: 44, height: 44, borderRadius: RADIUS.md, backgroundColor: C.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  recAvatarTxt: { color: C.primary, fontSize: 18, fontWeight: FONT.extraBold },
+  recInfo: { flex: 1 },
+  recName: { color: C.textPrimary, fontSize: 14, fontWeight: FONT.bold, marginBottom: 2 },
+  recId: { color: C.textMuted, fontSize: 10, letterSpacing: 0.8, marginBottom: 2 },
+  recTime: { color: C.textSecondary, fontSize: 11 },
+  recRight: { alignItems: 'flex-end' },
+  pill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.sm },
+  pillDone: { backgroundColor: C.successBg },
+  pillPend: { backgroundColor: C.warningBg },
+  pillTxt: { fontSize: 10, fontWeight: FONT.bold },
+  failCard: { backgroundColor: C.errorBg, borderRadius: RADIUS.md, padding: 12, borderWidth: 1, borderColor: C.error+'33', marginBottom: 8 },
+  failType: { color: C.errorText, fontSize: 12, fontWeight: FONT.extraBold, marginBottom: 3, textTransform: 'capitalize' },
+  failTime: { color: C.error, fontSize: 11 },
 });

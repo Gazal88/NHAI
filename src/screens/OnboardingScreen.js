@@ -1,55 +1,100 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert,
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, Animated, ScrollView, ImageBackground,
 } from 'react-native';
+import { C, FONT, RADIUS, SHADOW } from '../theme';
+
+let bgLaunch = null;
+try { bgLaunch = require('../../assets/images/bg_launch.png'); } catch (_) {}
 
 const ADMIN_PIN = 'ADMIN1234';
+const FLIP_DURATION = 420;
 
 export default function OnboardingScreen({ lookupWorker, onComplete, onAdminLogin }) {
+  const [isAdmin, setIsAdmin]       = useState(false);
   const [employeeId, setEmployeeId] = useState('');
-  const [passcode, setPasscode] = useState('');
-  const [adminPin, setAdminPin] = useState('');
-  const [mode, setMode] = useState('worker');
-  const [loading, setLoading] = useState(false);
+  const [passcode, setPasscode]     = useState('');
+  const [adminPin, setAdminPin]     = useState('');
+  const [loading, setLoading]       = useState(false);
+
+  // The flip value goes 0 → 180 (worker→admin) and back
+  const flipAnim = useRef(new Animated.Value(0)).current;
+  // Track whether we've crossed the midpoint to swap face visibility
+  const [showAdmin, setShowAdmin]   = useState(false);
+
+  // Background color transition (0 = worker blue, 1 = admin indigo)
+  const bgAnim = useRef(new Animated.Value(0)).current;
+
+  // Card entrance on mount
+  const mountScale   = useRef(new Animated.Value(0.92)).current;
+  const mountOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(mountScale, { toValue: 1, tension: 65, friction: 9, useNativeDriver: true }),
+      Animated.timing(mountOpacity, { toValue: 1, duration: 380, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const doFlip = (toAdmin) => {
+    if (toAdmin === isAdmin) return;
+
+    const toValue = toAdmin ? 180 : 0;
+
+    // Start background color transition
+    Animated.timing(bgAnim, {
+      toValue: toAdmin ? 1 : 0,
+      duration: FLIP_DURATION,
+      useNativeDriver: false,
+    }).start();
+
+    // At the midpoint of the flip (half rotation), swap which face is shown
+    setTimeout(() => {
+      setShowAdmin(toAdmin);
+    }, FLIP_DURATION / 2);
+
+    // Run the flip
+    Animated.timing(flipAnim, {
+      toValue,
+      duration: FLIP_DURATION,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsAdmin(toAdmin);
+    });
+  };
+
+  // Front face (Worker) rotates 0→90 (disappears), back face (Admin) rotates -90→0 (appears)
+  const frontRotate = flipAnim.interpolate({
+    inputRange:  [0, 180],
+    outputRange: ['0deg', '180deg'],
+  });
+  const backRotate = flipAnim.interpolate({
+    inputRange:  [0, 180],
+    outputRange: ['180deg', '360deg'],
+  });
+
+  const bgColor = bgAnim.interpolate({
+    inputRange:  [0, 1],
+    outputRange: [C.bg, C.adminLight],
+  });
+  const headerBg = bgAnim.interpolate({
+    inputRange:  [0, 1],
+    outputRange: [C.primary, C.adminPrimary],
+  });
 
   const handleWorkerLogin = async () => {
-    const id = employeeId.trim();
-    const code = passcode.trim();
-
-    if (!id || !code) {
-      Alert.alert('Required', 'Enter Employee ID and passcode.');
-      return;
-    }
-
+    const id = employeeId.trim(), code = passcode.trim();
+    if (!id || !code) { Alert.alert('Required', 'Enter Employee ID and passcode.'); return; }
     setLoading(true);
     try {
       const worker = await lookupWorker(id);
-
-      if (!worker) {
-        Alert.alert('Not Found', `Employee ID "${id}" was not found.`);
-        return;
-      }
-
-      if ((worker.passcode ?? '') !== code) {
-        Alert.alert('Access Denied', 'Incorrect worker passcode.');
-        return;
-      }
-
+      if (!worker) { Alert.alert('Not Found', `Employee ID "${id}" not found.`); return; }
+      if ((worker.passcode ?? '') !== code) { Alert.alert('Access Denied', 'Incorrect passcode.'); return; }
       onComplete(worker);
-    } catch (error) {
-      console.error('Worker login error:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    } catch { Alert.alert('Error', 'Something went wrong. Please try again.'); }
+    finally { setLoading(false); }
   };
 
   const handleAdminLogin = () => {
@@ -58,65 +103,113 @@ export default function OnboardingScreen({ lookupWorker, onComplete, onAdminLogi
       setAdminPin('');
       return;
     }
-
     onAdminLogin();
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={styles.card}>
-        <View style={styles.logoRow}>
-          <View style={styles.logoDot} />
-          <Text style={styles.logoText}>FaceAuth</Text>
+    <Animated.View style={[styles.root, { backgroundColor: bgColor }]}>
+      {/* bg_launch as subtle watermark */}
+      {bgLaunch && (
+        <ImageBackground
+          source={bgLaunch}
+          style={styles.bgWatermark}
+          resizeMode="cover"
+          imageStyle={{ opacity: 0.07 }}
+        />
+      )}
+      {/* Header band with hero image */}
+      <Animated.View style={[styles.header, { backgroundColor: headerBg }]}>
+        {/* Hero image overlay */}
+        <View style={styles.heroImageWrap}>
+          {(() => {
+            try {
+              const img = require('../../assets/images/hero_login.png');
+              const { Image } = require('react-native');
+              return <Image source={img} style={styles.heroImage} resizeMode="cover" />;
+            } catch (_) { return null; }
+          })()}
+          <View style={styles.heroOverlay} />
         </View>
+        <Text style={styles.headerApp}>Pehchaan</Text>
+        <Text style={styles.headerSub}>पहचान  ·  Field Attendance System</Text>
+      </Animated.View>
 
-        <View style={styles.modeRow}>
-          <TouchableOpacity
-            style={[styles.modeButton, mode === 'worker' && styles.modeActive]}
-            onPress={() => setMode('worker')}
+      <KeyboardAvoidingView
+        style={styles.body}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {/* Hero image strip — fills the empty space behind the card */}
+        {bgLaunch && (
+          <ImageBackground
+            source={bgLaunch}
+            style={styles.heroStrip}
+            resizeMode="cover"
           >
-            <Text style={[styles.modeText, mode === 'worker' && styles.modeTextActive]}>
+            <View style={styles.heroStripOverlay} />
+          </ImageBackground>
+        )}
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+        {/* Toggle buttons — above the card, always visible */}
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, !isAdmin && styles.toggleBtnWorker]}
+            onPress={() => doFlip(false)}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.toggleBtnText, !isAdmin && styles.toggleBtnTextActive]}>
               Worker
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.modeButton, mode === 'admin' && styles.modeActive]}
-            onPress={() => setMode('admin')}
+            style={[styles.toggleBtn, isAdmin && styles.toggleBtnAdmin]}
+            onPress={() => doFlip(true)}
+            activeOpacity={0.85}
           >
-            <Text style={[styles.modeText, mode === 'admin' && styles.modeTextActive]}>
+            <Text style={[styles.toggleBtnText, isAdmin && styles.toggleBtnTextActive]}>
               Admin
             </Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.title}>
-          {mode === 'worker' ? 'Worker Login' : 'Admin Login'}
-        </Text>
-        <Text style={styles.subtitle}>
-          {mode === 'worker'
-            ? 'Use your Employee ID and passcode.'
-            : 'Admins can enroll workers without a field account.'}
-        </Text>
+        {/* 3D flip card container */}
+        <Animated.View style={[styles.cardContainer, { opacity: mountOpacity, transform: [{ scale: mountScale }] }]}>
 
-        {mode === 'worker' ? (
-          <>
+          {/* FRONT FACE — Worker */}
+          <Animated.View style={[
+            styles.card,
+            styles.cardFace,
+            { transform: [{ perspective: 1200 }, { rotateY: frontRotate }] },
+            showAdmin && styles.hidden,
+          ]}>
+            <View style={styles.faceIndicator}>
+              <View style={styles.faceIndicatorDot} />
+              <Text style={styles.faceIndicatorText}>Worker Login</Text>
+            </View>
+
+            <Text style={styles.title}  >Welcome back</Text>
+            <Text style={styles.subtitle}>Enter your Employee ID and passcode to mark attendance.</Text>
+
+            <Text style={styles.label}>EMPLOYEE ID</Text>
             <TextInput
               style={styles.input}
-              placeholder="Employee ID e.g. EMP001"
-              placeholderTextColor="#A8B5A0"
+              placeholder="e.g. EMP001"
+              placeholderTextColor={C.textMuted}
               value={employeeId}
               onChangeText={setEmployeeId}
               autoCapitalize="characters"
               autoCorrect={false}
               editable={!loading}
             />
+            <Text style={styles.label}>PASSCODE</Text>
             <TextInput
               style={styles.input}
-              placeholder="Worker passcode"
-              placeholderTextColor="#A8B5A0"
+              placeholder="Enter passcode"
+              placeholderTextColor={C.textMuted}
               value={passcode}
               onChangeText={setPasscode}
               secureTextEntry
@@ -125,151 +218,318 @@ export default function OnboardingScreen({ lookupWorker, onComplete, onAdminLogi
               onSubmitEditing={handleWorkerLogin}
             />
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.btn, styles.btnWorker, loading && styles.btnDisabled]}
               onPress={handleWorkerLogin}
               disabled={loading}
-              activeOpacity={0.85}
+              activeOpacity={0.88}
             >
-              {loading ? (
-                <ActivityIndicator color="#F5F5E8" />
-              ) : (
-                <Text style={styles.buttonText}>Login</Text>
-              )}
+              {loading
+                ? <ActivityIndicator color="#FFFFFF" />
+                : <Text style={styles.btnText}>Login</Text>}
             </TouchableOpacity>
-          </>
-        ) : (
-          <>
+
+            <Text style={styles.footerNote}>Contact your site admin if you cannot log in.</Text>
+          </Animated.View>
+
+          {/* BACK FACE — Admin */}
+          <Animated.View style={[
+            styles.card,
+            styles.cardFace,
+            styles.cardBack,
+            { transform: [{ perspective: 1200 }, { rotateY: backRotate }] },
+            !showAdmin && styles.hidden,
+          ]}>
+            <View style={[styles.faceIndicator, styles.faceIndicatorAdmin]}>
+              <View style={[styles.faceIndicatorDot, styles.faceIndicatorDotAdmin]} />
+              <Text style={[styles.faceIndicatorText, { color: C.adminPrimary }]}>Admin Access</Text>
+            </View>
+
+            <Text style={[styles.title, styles.titleAdmin]}>Admin Panel</Text>
+            <Text style={styles.subtitle}>Authorised personnel only. Enter your admin PIN to continue.</Text>
+
+            <Text style={styles.label}>ADMIN PIN</Text>
             <TextInput
-              style={styles.input}
-              placeholder="Admin PIN"
-              placeholderTextColor="#A8B5A0"
+              style={[styles.input, styles.inputAdmin]}
+              placeholder="Enter admin PIN"
+              placeholderTextColor={C.textMuted}
               value={adminPin}
               onChangeText={setAdminPin}
               secureTextEntry
               autoCorrect={false}
               onSubmitEditing={handleAdminLogin}
             />
-            <TouchableOpacity style={styles.button} onPress={handleAdminLogin}>
-              <Text style={styles.buttonText}>Open Admin</Text>
+            <TouchableOpacity
+              style={[styles.btn, styles.btnAdmin]}
+              onPress={handleAdminLogin}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.btnText}>Open Admin Panel</Text>
             </TouchableOpacity>
-          </>
-        )}
 
-        <Text style={styles.hint}>
-          Demo worker: EMP001 / 1234
-        </Text>
-      </View>
-    </KeyboardAvoidingView>
+            <Text style={styles.footerNote}>Admin access is restricted to authorised NHAI personnel.</Text>
+          </Animated.View>
+
+        </Animated.View>
+
+        {/* <Text style={styles.version}>NHAI Field Attendance  ·  Pehchaan v1.0</Text> */}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5E8',
-    justifyContent: 'center',
+  root: { flex: 1 },
+  bgWatermark: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 0,
+  },
+
+  header: {
+    paddingTop: 52,
+    paddingBottom: 24,
     paddingHorizontal: 24,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 28,
+  heroImageWrap: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+  },
+  heroOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,33,71,0.72)',
+  },
+  headerApp: {
+    fontSize: 28,
+    fontWeight: FONT.black,
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    zIndex: 1,
+  },
+  headerSub: {
+    fontSize: 12,
+    fontWeight: FONT.medium,
+    color: 'rgba(255,255,255,0.65)',
+    letterSpacing: 0.3,
+    zIndex: 1,
+  },
+  nhaiBadge: {
+    position: 'absolute',
+    top: 54,
+    right: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderWidth: 1,
-    borderColor: '#D4DCC8',
-    shadowColor: '#2C3520',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  logoRow: {
-    flexDirection: 'row',
+    borderColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center',
-    marginBottom: 22,
   },
-  logoDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#8FA85A',
-    marginRight: 8,
+  nhaiBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: FONT.black,
+    letterSpacing: 1,
   },
-  logoText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#5C6B3A',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  modeRow: {
-    flexDirection: 'row',
-    backgroundColor: '#EEF0E8',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 22,
-  },
-  modeButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 9,
-  },
-  modeActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  modeText: {
-    color: '#7A8A6A',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  modeTextActive: {
-    color: '#5C6B3A',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#2C3520',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#7A8A6A',
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  input: {
-    backgroundColor: '#EEF0E8',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#2C3520',
-    borderWidth: 1,
-    borderColor: '#D4DCC8',
-    marginBottom: 14,
+  nhaiBadgeSub: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 9,
+    fontWeight: FONT.medium,
     letterSpacing: 0.5,
   },
-  button: {
-    backgroundColor: '#5C6B3A',
-    borderRadius: 12,
+
+  body: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    position: 'relative',
+  },
+  heroStrip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  },
+  heroStripOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,10,30,0.55)',
+  },
+  scrollContent: {
+    paddingHorizontal: 0,
+    paddingBottom: 32,
+    zIndex: 1,
+  },
+
+  // Toggle row above card
+  toggleRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    borderRadius: RADIUS.full,
+    padding: 4,
+    marginBottom: 16,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+  },
+  toggleBtnWorker: {
+    backgroundColor: C.primary,
+    ...SHADOW.sm,
+  },
+  toggleBtnAdmin: {
+    backgroundColor: C.adminPrimary,
+    ...SHADOW.sm,
+  },
+  toggleBtnText: {
+    fontSize: 13,
+    fontWeight: FONT.semiBold,
+    color: C.textSecondary,
+  },
+  toggleBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: FONT.bold,
+  },
+
+  // Card flip container — must have fixed height
+  cardContainer: {
+    position: 'relative',
+    minHeight: 360,
+  },
+
+  // Both faces share this base
+  cardFace: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backfaceVisibility: 'hidden',
+  },
+
+  hidden: {
+    // Prevent interaction on the hidden face
+    pointerEvents: 'none',
+  },
+
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: RADIUS.xl,
+    padding: 24,
+    ...SHADOW.md,
+  },
+  cardBack: {
+    backgroundColor: '#F4F7FB', // slightly different tint for admin
+  },
+
+  // Face indicator strip
+  faceIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: C.divider,
+  },
+  faceIndicatorAdmin: {
+    borderBottomColor: C.adminPrimary + '22',
+  },
+  faceIndicatorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.primary,
+  },
+  faceIndicatorDotAdmin: {
+    backgroundColor: C.adminPrimary,
+  },
+  faceIndicatorText: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: C.primary,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+
+  title: {
+    fontSize: 22,
+    fontWeight: FONT.extraBold,
+    color: C.textPrimary,
+    marginBottom: 6,
+  },
+  titleAdmin: { color: C.adminPrimary },
+  subtitle: {
+    fontSize: 13,
+    color: C.textSecondary,
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+
+  label: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: C.textSecondary,
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: C.bg,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    fontWeight: FONT.medium,
+    color: C.textPrimary,
+    marginBottom: 16,
+  },
+  inputAdmin: {
+    borderColor: C.adminPrimary + '44',
+  },
+
+  btn: {
+    borderRadius: RADIUS.md,
     paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 2,
-    marginBottom: 18,
+    marginBottom: 16,
+    ...SHADOW.lg,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#F5F5E8',
-    fontSize: 16,
-    fontWeight: '700',
+  btnWorker: { backgroundColor: C.primary },
+  btnAdmin:  { backgroundColor: C.adminPrimary },
+  btnDisabled: { opacity: 0.6 },
+  btnText: {
+    fontSize: 15,
+    fontWeight: FONT.bold,
+    color: '#FFFFFF',
     letterSpacing: 0.3,
   },
-  hint: {
-    fontSize: 12,
-    color: '#A8B5A0',
+
+  footerNote: {
+    fontSize: 11,
+    color: C.textMuted,
     textAlign: 'center',
-    lineHeight: 17,
+    lineHeight: 16,
+  },
+
+  version: {
+    marginTop: 16,
+    marginBottom: 16,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.45)',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
 });

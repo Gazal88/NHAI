@@ -31,6 +31,15 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+
+# Supabase / API credentials — remove gitignore for EAS build
+# src/services/config.js
+
+# Internal project management — not for public repo
+AGENTS.md
+context.md
+docs/supabase_migration.sql
 
 # typescript
 *.tsbuildinfo

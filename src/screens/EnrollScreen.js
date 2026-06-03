@@ -14,7 +14,8 @@ import { useRef, useState } from 'react';
 import { enrollWorker } from '../services/DatabaseService';
 import CameraView from '../components/CameraView';
 
-const LIVENESS_THRESHOLD = 0.5;
+const LIVENESS_THRESHOLD = 0.45;
+const REQUIRED_FRAMES = 5;
 
 const averageEmbeddings = (embeddings) => {
   if (!embeddings.length) return null;
@@ -31,7 +32,7 @@ const averageEmbeddings = (embeddings) => {
   return sums.map((value) => value / embeddings.length);
 };
 
-export default function EnrollScreen({ initialUnlocked = false }) {
+export default function EnrollScreen({ initialUnlocked = false, onDone }) {
   const cameraRef = useRef(null);
   const [pin, setPin] = useState('');
   const [unlocked, setUnlocked] = useState(initialUnlocked);
@@ -42,6 +43,7 @@ export default function EnrollScreen({ initialUnlocked = false }) {
   const [capturedEmbeddings, setCapturedEmbeddings] = useState([]);
   const [latestInference, setLatestInference] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const step = capturedEmbeddings.length;
 
   const checkPin = () => {
@@ -49,7 +51,6 @@ export default function EnrollScreen({ initialUnlocked = false }) {
       setUnlocked(true);
       return;
     }
-
     setPin('');
     Alert.alert('Wrong PIN', 'Please try again.');
   };
@@ -62,35 +63,66 @@ export default function EnrollScreen({ initialUnlocked = false }) {
     setCapturedEmbeddings([]);
     setUnlocked(initialUnlocked);
     setPin('');
+    setLatestInference(null);
+  };
+
+  const handleDone = () => {
+    resetForm();
+    onDone?.();
   };
 
   const handleCaptureFrame = async () => {
+    if (capturing) return;
+
+    // ── Quality gate 1: models must be ready ──────────────────────────────
     if (!latestInference?.ready) {
       Alert.alert('Models Warming Up', 'Keep the worker face in view and try again.');
       return;
     }
 
+    // ── Quality gate 2: face must be detected by BlazeFace ────────────────
+    // faceDetected is true when BlazeFace found a face; if BlazeFace hasn't
+    // loaded yet it will be undefined/false — we warn but don't hard-block
+    // so enrollment still works if BlazeFace is slow to load.
+    if (latestInference.faceDetected === false) {
+      Alert.alert(
+        'No Face Detected',
+        'Position the worker\'s face clearly in the frame and try again.'
+      );
+      return;
+    }
+
+    // ── Quality gate 3: liveness score ───────────────────────────────────
     if (
       typeof latestInference.livenessScore !== 'number' ||
       latestInference.livenessScore < LIVENESS_THRESHOLD
     ) {
-      Alert.alert('Liveness Failed', 'Ask the worker to face the camera clearly before capture.');
+      Alert.alert(
+        'Liveness Check Failed',
+        `Liveness score too low (${((latestInference.livenessScore ?? 0) * 100).toFixed(0)}%). Ask the worker to face the camera clearly in good lighting.`
+      );
       return;
     }
 
+    // ── Quality gate 4: embedding must be present ─────────────────────────
     if (!Array.isArray(latestInference.embedding) || latestInference.embedding.length === 0) {
-      Alert.alert('No Embedding', 'Recognition model did not return an embedding yet.');
+      Alert.alert('No Embedding', 'Recognition model did not return an embedding yet. Wait a moment.');
       return;
     }
 
+    setCapturing(true);
     try {
       await cameraRef.current?.capturePhoto();
+      setCapturedEmbeddings((current) => [...current, latestInference.embedding]);
     } catch (error) {
       Alert.alert('Camera Not Ready', 'Please wait for the camera preview.');
-      return;
+    } finally {
+      setCapturing(false);
     }
+  };
 
-    setCapturedEmbeddings((current) => [...current, latestInference.embedding]);
+  const handleRemoveLastFrame = () => {
+    setCapturedEmbeddings((current) => current.slice(0, -1));
   };
 
   const handleSave = async () => {
@@ -106,12 +138,16 @@ export default function EnrollScreen({ initialUnlocked = false }) {
       Alert.alert('Required', 'Enter worker passcode.');
       return;
     }
+    if (capturedEmbeddings.length < REQUIRED_FRAMES) {
+      Alert.alert('Face Template Incomplete', `Capture all ${REQUIRED_FRAMES} frames before saving.`);
+      return;
+    }
 
     setSaving(true);
     try {
       const embedding = averageEmbeddings(capturedEmbeddings);
       if (!embedding) {
-        Alert.alert('Face Template Missing', 'Capture 5 valid face frames before saving.');
+        Alert.alert('Face Template Error', 'Embedding dimensions are inconsistent. Re-capture all frames.');
         setSaving(false);
         return;
       }
@@ -126,8 +162,8 @@ export default function EnrollScreen({ initialUnlocked = false }) {
 
       Alert.alert(
         'Enrolled',
-        `${name} (${employeeId.toUpperCase()}) enrolled successfully.`,
-        [{ text: 'Done', onPress: resetForm }]
+        `${name.trim()} (${employeeId.trim().toUpperCase()}) enrolled successfully.`,
+        [{ text: 'Done', onPress: handleDone }]
       );
     } catch (e) {
       if (e.message && e.message.includes('UNIQUE')) {
@@ -143,6 +179,7 @@ export default function EnrollScreen({ initialUnlocked = false }) {
           `This face appears to match ${e.duplicate?.worker?.name ?? 'an existing worker'} (${e.duplicate?.worker?.employee_id ?? 'existing ID'}). Enrollment blocked.`
         );
       } else {
+        console.error('[Enroll] save error:', e);
         Alert.alert('Error', 'Failed to save. Try again.');
       }
     } finally {
@@ -150,6 +187,7 @@ export default function EnrollScreen({ initialUnlocked = false }) {
     }
   };
 
+  // ── PIN gate ─────────────────────────────────────────────────────────────
   if (!unlocked) {
     return (
       <KeyboardAvoidingView
@@ -175,6 +213,7 @@ export default function EnrollScreen({ initialUnlocked = false }) {
             placeholder="Admin PIN"
             placeholderTextColor="#A8B5A0"
             secureTextEntry
+            onSubmitEditing={checkPin}
           />
           <TouchableOpacity style={styles.button} onPress={checkPin}>
             <Text style={styles.buttonText}>UNLOCK</Text>
@@ -187,6 +226,14 @@ export default function EnrollScreen({ initialUnlocked = false }) {
     );
   }
 
+  // ── Enrollment form ───────────────────────────────────────────────────────
+  const faceReady = latestInference?.ready === true;
+  const faceDetected = latestInference?.faceDetected === true;
+  const livenessOk =
+    typeof latestInference?.livenessScore === 'number' &&
+    latestInference.livenessScore >= LIVENESS_THRESHOLD;
+  const captureReady = faceReady && livenessOk;
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -194,18 +241,27 @@ export default function EnrollScreen({ initialUnlocked = false }) {
     >
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.root}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <StatusBar barStyle="dark-content" backgroundColor="#F5F5E8" />
 
         <View style={styles.topBar}>
           <Text style={styles.pageTitle}>Enroll Worker</Text>
-          <View style={styles.adminBadge}>
-            <Text style={styles.adminBadgeText}>ADMIN</Text>
+          <View style={styles.topBarRight}>
+            <View style={styles.adminBadge}>
+              <Text style={styles.adminBadgeText}>ADMIN</Text>
+            </View>
+            {onDone && (
+              <TouchableOpacity onPress={handleDone} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
+        {/* ── Worker details ── */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Worker Details</Text>
 
@@ -250,53 +306,87 @@ export default function EnrollScreen({ initialUnlocked = false }) {
           />
         </View>
 
+        {/* ── Face capture ── */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Face Capture</Text>
           <Text style={styles.captureInfo}>
-            Capture 5 live frames for accurate face recognition
+            Capture {REQUIRED_FRAMES} live frames. Face must be clearly visible with good lighting.
           </Text>
 
           <View style={styles.cameraBox}>
             <CameraView ref={cameraRef} onInference={setLatestInference} />
           </View>
 
-          <View style={styles.frameBox}>
-            <Text style={styles.frameIcon}>[]</Text>
-            <Text style={styles.frameText}>
-              {step === 0
-                ? 'Position worker face in frame'
-                : step < 5
-                ? `${step} of 5 frames captured`
-                : 'All 5 frames captured'}
-            </Text>
-            <Text style={styles.modelStatus}>
-              {latestInference?.ready
-                ? `Models live | Liveness ${(latestInference.livenessScore * 100).toFixed(0)}%`
-                : 'Models warming up'}
-            </Text>
-            <View style={styles.progressRow}>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <View
-                  key={i}
-                  style={[styles.progressDot, i <= step && styles.progressDotActive]}
-                />
-              ))}
+          {/* Status row */}
+          <View style={styles.statusRow}>
+            <View style={[styles.statusPill, faceReady ? styles.pillGreen : styles.pillAmber]}>
+              <Text style={styles.statusPillText}>
+                {faceReady ? 'Models ready' : 'Warming up'}
+              </Text>
+            </View>
+            <View style={[styles.statusPill, faceDetected ? styles.pillGreen : styles.pillGrey]}>
+              <Text style={styles.statusPillText}>
+                {faceDetected ? 'Face ✓' : 'No face'}
+              </Text>
+            </View>
+            <View style={[styles.statusPill, livenessOk ? styles.pillGreen : styles.pillGrey]}>
+              <Text style={styles.statusPillText}>
+                {faceReady ? (livenessOk ? 'Live ✓' : 'Checking…') : 'Liveness —'}
+              </Text>
             </View>
           </View>
 
-          {step < 5 && (
+          {/* Progress dots */}
+          <View style={styles.progressRow}>
+            {Array.from({ length: REQUIRED_FRAMES }, (_, i) => (
+              <View
+                key={i}
+                style={[styles.progressDot, i < step && styles.progressDotActive]}
+              />
+            ))}
+          </View>
+          <Text style={styles.frameText}>
+            {step === 0
+              ? 'Position worker face in frame'
+              : step < REQUIRED_FRAMES
+              ? `${step} of ${REQUIRED_FRAMES} frames captured`
+              : `All ${REQUIRED_FRAMES} frames captured`}
+          </Text>
+
+          {/* Capture / re-capture buttons */}
+          {step < REQUIRED_FRAMES && (
             <TouchableOpacity
-              style={styles.captureButton}
+              style={[
+                styles.captureButton,
+                (!captureReady || capturing) && styles.captureButtonDisabled,
+              ]}
               onPress={handleCaptureFrame}
+              disabled={!captureReady || capturing}
             >
               <Text style={styles.captureButtonText}>
-                CAPTURE FRAME {step + 1}
+                {capturing ? 'CAPTURING...' : `CAPTURE FRAME ${step + 1}`}
               </Text>
             </TouchableOpacity>
           )}
+
+          {step > 0 && step < REQUIRED_FRAMES && (
+            <TouchableOpacity style={styles.removeFrameBtn} onPress={handleRemoveLastFrame}>
+              <Text style={styles.removeFrameText}>Remove last frame</Text>
+            </TouchableOpacity>
+          )}
+
+          {step === REQUIRED_FRAMES && (
+            <View style={styles.allCapturedRow}>
+              <Text style={styles.allCapturedText}>All frames captured</Text>
+              <TouchableOpacity onPress={() => setCapturedEmbeddings([])}>
+                <Text style={styles.recaptureText}>Re-capture all</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
-        {step === 5 && (
+        {/* ── Save button ── */}
+        {step === REQUIRED_FRAMES && (
           <TouchableOpacity
             style={[styles.button, saving && styles.buttonDisabled]}
             onPress={handleSave}
@@ -326,7 +416,14 @@ export default function EnrollScreen({ initialUnlocked = false }) {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: '#F5F5E8' },
-  root: { paddingHorizontal: 20, paddingTop: 52, paddingBottom: 30 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 52, paddingBottom: 30 },
+  // PIN gate
+  root: {
+    flex: 1,
+    backgroundColor: '#F5F5E8',
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+  },
   lockTop: { alignItems: 'center', marginBottom: 28 },
   lockIcon: {
     width: 72,
@@ -356,11 +453,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  footer: {
+    color: '#A8B5A0',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  // Shared
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   pageTitle: {
     color: '#2C3520',
@@ -403,6 +512,7 @@ const styles = StyleSheet.create({
     color: '#7A8A6A',
     fontSize: 12,
     marginBottom: 14,
+    lineHeight: 18,
   },
   inputLabel: {
     color: '#5C6B3A',
@@ -423,16 +533,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 16,
   },
-  frameBox: {
-    backgroundColor: '#F5F5E8',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#D4DCC8',
-    padding: 20,
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
   cameraBox: {
     height: 220,
     overflow: 'hidden',
@@ -440,17 +540,34 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#D4DCC8',
+    marginBottom: 12,
+  },
+  // Status pills
+  statusRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 14,
+    flexWrap: 'wrap',
   },
-  frameIcon: { fontSize: 32, color: '#5C6B3A' },
-  frameText: { color: '#7A8A6A', fontSize: 13 },
-  modelStatus: {
-    color: '#5C6B3A',
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  pillGreen: { backgroundColor: '#EEF0E8' },
+  pillAmber: { backgroundColor: '#FFF3CD' },
+  pillGrey:  { backgroundColor: '#F0F0F0' },
+  statusPillText: {
     fontSize: 11,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontWeight: '700',
+    color: '#2C3520',
   },
-  progressRow: { flexDirection: 'row', gap: 10 },
+  // Progress
+  progressRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
   progressDot: {
     width: 12,
     height: 12,
@@ -458,6 +575,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#D4DCC8',
   },
   progressDotActive: { backgroundColor: '#5C6B3A' },
+  frameText: {
+    color: '#7A8A6A',
+    fontSize: 13,
+    marginBottom: 14,
+  },
+  // Capture button
   captureButton: {
     backgroundColor: '#EEF0E8',
     paddingVertical: 13,
@@ -465,6 +588,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: '#5C6B3A',
+    marginBottom: 8,
+  },
+  captureButtonDisabled: {
+    opacity: 0.45,
+    borderColor: '#A8B5A0',
   },
   captureButtonText: {
     color: '#5C6B3A',
@@ -473,6 +601,32 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier New',
   },
+  removeFrameBtn: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  removeFrameText: {
+    color: '#B65F4A',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  allCapturedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  allCapturedText: {
+    color: '#5C6B3A',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  recaptureText: {
+    color: '#C4A35A',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // Save / action buttons
   button: {
     backgroundColor: '#5C6B3A',
     paddingVertical: 17,
@@ -495,10 +649,13 @@ const styles = StyleSheet.create({
   },
   logoutRow: { alignItems: 'center', paddingVertical: 8 },
   logoutText: { color: '#A8B5A0', fontSize: 13 },
-  footer: {
-    color: '#A8B5A0',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 16,
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EEF0E8',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  closeBtnText: { color: '#5C6B3A', fontSize: 16, fontWeight: '700' },
 });

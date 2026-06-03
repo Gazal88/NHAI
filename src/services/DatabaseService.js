@@ -36,21 +36,12 @@ function cosineSimilarity(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
     return null;
   }
-
+  // MobileFaceNet output is L2-normalised, so dot product = cosine similarity
   let dot = 0;
-  let normA = 0;
-  let normB = 0;
-
   for (let i = 0; i < a.length; i += 1) {
-    const av = Number(a[i]);
-    const bv = Number(b[i]);
-    dot += av * bv;
-    normA += av * av;
-    normB += bv * bv;
+    dot += Number(a[i]) * Number(b[i]);
   }
-
-  if (normA === 0 || normB === 0) return null;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  return dot;
 }
 
 async function getColumnNames(tableName) {
@@ -77,7 +68,14 @@ async function migrateExistingSchema() {
     ['passcode', 'TEXT'],
     ['embedding', 'TEXT'],
     ['enrolled_at', 'INTEGER'],
+    ['active', 'INTEGER DEFAULT 1'],
+    ['deleted_at', 'INTEGER'],
+    ['email', 'TEXT'],
+    ['phone', 'TEXT'],
+    ['photo_uri', 'TEXT'],
   ]);
+
+  await db.runAsync('UPDATE workers SET active = 1 WHERE active IS NULL');
 
   await db.execAsync(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_workers_employee_id
@@ -106,7 +104,7 @@ function requireDB() {
 
 async function findWorkerByEmployeeId(employeeId) {
   return db.getFirstAsync(
-    'SELECT * FROM workers WHERE employee_id = ?',
+    'SELECT * FROM workers WHERE employee_id = ? AND active = 1',
     [employeeId]
   );
 }
@@ -195,16 +193,19 @@ export async function getWorkerByEmployeeId(employeeId) {
 }
 
 // ─── getAllWorkers ─────────────────────────────────────────────────────────
-export async function getAllWorkers() {
+export async function getAllWorkers({ includeInactive = false } = {}) {
   requireDB();
-  return db.getAllAsync('SELECT * FROM workers ORDER BY name ASC');
+  if (includeInactive) {
+    return db.getAllAsync('SELECT * FROM workers ORDER BY active DESC, name ASC');
+  }
+  return db.getAllAsync('SELECT * FROM workers WHERE active = 1 ORDER BY name ASC');
 }
 
 export async function findPotentialDuplicateWorker({
   employeeId,
   name,
   embedding,
-  threshold = 0.82,
+  threshold = 0.45,
 }) {
   requireDB();
   const targetEmployeeId = employeeId.trim().toUpperCase();
@@ -285,6 +286,25 @@ export async function enrollWorker(employeeId, name, department, passcode, embed
     passcode: passcode?.trim() || null,
     embedding: embedding ? JSON.stringify(embedding) : null,
   });
+}
+
+export async function deactivateWorker(employeeId) {
+  requireDB();
+  const targetEmployeeId = employeeId.trim().toUpperCase();
+  const worker = await findWorkerByEmployeeId(targetEmployeeId);
+
+  if (!worker) {
+    const error = new Error('WORKER_NOT_FOUND');
+    error.code = 'WORKER_NOT_FOUND';
+    throw error;
+  }
+
+  await db.runAsync(
+    'UPDATE workers SET active = 0, deleted_at = ? WHERE employee_id = ?',
+    [Date.now(), targetEmployeeId]
+  );
+
+  return worker;
 }
 
 // ─── logAttendance ────────────────────────────────────────────────────────
@@ -369,11 +389,76 @@ export async function getUnsyncedRecords() {
 
 export async function deleteSynced() {
   requireDB();
-  await db.runAsync('DELETE FROM attendance WHERE synced = 1');
+  // Keep synced records for 24 hours so HistoryScreen can show "Synced" status.
+  // Only purge records that were synced more than 24h ago.
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  await db.runAsync(
+    'DELETE FROM attendance WHERE synced = 1 AND timestamp < ?',
+    [cutoff]
+  );
+}
+
+export async function updateWorkerProfile(employeeId, { email, phone, photoUri }) {
+  requireDB();
+  await db.runAsync(
+    `UPDATE workers SET email = ?, phone = ?, photo_uri = ? WHERE employee_id = ?`,
+    [email ?? null, phone ?? null, photoUri ?? null, employeeId.trim().toUpperCase()]
+  );
 }
 
 export async function getAttendanceCount() {
   return getPendingCount();
+}
+
+export async function getAttendanceByEmployee(employeeId, limit = 50) {
+  requireDB();
+  return db.getAllAsync(
+    'SELECT * FROM attendance WHERE employee_id = ? ORDER BY timestamp DESC LIMIT ?',
+    [employeeId.trim().toUpperCase(), limit]
+  );
+}
+
+export async function getTodayAttendanceByEmployee(employeeId) {
+  requireDB();
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  return db.getFirstAsync(
+    'SELECT * FROM attendance WHERE employee_id = ? AND timestamp >= ? ORDER BY timestamp DESC LIMIT 1',
+    [employeeId.trim().toUpperCase(), startOfDay.getTime()]
+  );
+}
+
+export async function getAttendanceSummary() {
+  requireDB();
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const todayRow = await db.getFirstAsync(
+    'SELECT COUNT(*) as count FROM attendance WHERE timestamp >= ?',
+    [startOfDay.getTime()]
+  );
+  const totalRow = await db.getFirstAsync(
+    'SELECT COUNT(*) as count FROM attendance'
+  );
+  const pendingRow = await db.getFirstAsync(
+    'SELECT COUNT(*) as count FROM attendance WHERE synced = 0'
+  );
+  const workerRow = await db.getFirstAsync(
+    'SELECT COUNT(*) as count FROM workers WHERE active = 1'
+  );
+  return {
+    todayCount: todayRow?.count ?? 0,
+    totalCount: totalRow?.count ?? 0,
+    pendingSync: pendingRow?.count ?? 0,
+    activeWorkers: workerRow?.count ?? 0,
+  };
+}
+
+export async function getRecentAttendanceAll(limit = 5) {
+  requireDB();
+  return db.getAllAsync(
+    'SELECT * FROM attendance ORDER BY timestamp DESC LIMIT ?',
+    [limit]
+  );
 }
 
 export async function logFailure(type, details = {}) {

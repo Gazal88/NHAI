@@ -1,19 +1,57 @@
 {
   "expo": {
-    "name": "FaceAuthModule",
-    "slug": "FaceAuthModule",
+    "name": "Pehchaan",
+    "slug": "Pehchaan",
     "version": "1.0.0",
+    "orientation": "portrait",
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
-      "react-native-vision-camera"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pehchaan needs access to your photo library to set your profile picture."
+        }
+      ],
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Pehchaan needs camera access for face recognition attendance."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Pehchaan uses your location to tag attendance records."
+        }
+      ]
     ],
     "android": {
+      "package": "com.pehchaan.app",
+      "versionCode": 1,
       "permissions": [
         "CAMERA",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
-      ]
-    }
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#003566"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.pehchaan.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Pehchaan needs camera access for face recognition attendance.",
+        "NSLocationWhenInUseUsageDescription": "Pehchaan uses your location to tag attendance records.",
+        "NSMicrophoneUsageDescription": "Microphone access is required by the camera framework."
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4829eb37-77a1-4f30-8b3e-e40bdb14a6c1"
+      }
+    },
+    "owner": "gazal1509"
   }
 }

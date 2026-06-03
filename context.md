@@ -1,380 +1,319 @@
 # context.md - FaceAuthModule Current Handoff
 
-Date: 30 May 2026
+Date: 03 June 2026
 Project: FaceAuthModule
 Hackathon: Hackathon 7.0
+Deadline: 05 June 2026
 Role: Person 2 - App Dev Lead
 Repo branch: app/person2
 Remote: https://github.com/Gazal88/NHAI.git
 
+---
+
 ## One Line Status
-The app is now a usable Android prototype with launch screen, worker/admin login, SQLite, model assets, defensive camera/model loading, live liveness + embedding inference, embedding-based enrollment/verify checks, history, sync fallback, and account/logout flow. It still needs real FaceMesh gesture validation, BlazeFace cropping, threshold validation, and full device testing.
+Working offline-first Android prototype. All core features implemented: login, enrollment, face recognition, liveness check, gesture challenge, GPS attendance, SQLite, Supabase sync, admin mode, history, account. Models loaded and running on-device. Face matching works at threshold 0.45. Sync fixed with explicit column mapping. No internal scores shown to users.
 
-## Source Documents / PRD
-- `C:\Users\hp\Downloads\hackathon_doc7.pdf`
-- `C:\Users\hp\Downloads\Person2_AppDev_Workplan.docx`
-- `C:\Users\hp\Downloads\files (2)\Hackathon7_PRD_Final.docx`
+---
 
-Core PRD requirements:
-- React Native Android + iOS prototype.
-- Offline face recognition.
-- Offline liveness detection.
-- Active anti-spoofing such as blink, smile, or head turn.
-- Model bundle around 20 MB or less.
-- Recognition + liveness under 1 second on mid-range devices.
-- Android 8+, iOS 12+, minimum 3 GB RAM.
-- Accuracy target above 95%.
-- Works outdoors and across diverse Indian demographics.
-- Sync/purge when network returns.
-- Submit source, PPT/PDF, docs, architecture, integration steps, benchmarks.
+## CRITICAL: Non-Negotiable Before Writing Any Code
+Read exact SDK docs first: https://docs.expo.dev/versions/v56.0.0/
 
-## Current Stack
-- Expo SDK 56.0.4
-- React Native 0.85.3
-- React 19.2.3
-- Navigation: `@react-navigation/native`, bottom tabs
-- Camera: `react-native-vision-camera` v4
-- TFLite: `react-native-fast-tflite` v3
-- Frame resize: `vision-camera-resize-plugin`
-- Worklets: `react-native-worklets-core`
-- SQLite: `expo-sqlite`
-- GPS: `expo-location`
-- Secure storage installed: `expo-secure-store`
-- Sync: `@supabase/supabase-js`, `@react-native-community/netinfo`
+---
 
-## Current App Flow
-1. App opens to `LaunchScreen`.
-2. `App.js` initializes SQLite first.
-3. App restores saved `employee_id` from `app_config` if available.
-4. First usable page is `OnboardingScreen`.
-5. Login modes:
-   - Worker login: Employee ID + worker passcode.
-   - Admin login: Admin PIN.
-6. Worker tabs:
-   - Verify
-   - Enroll
-   - History
-   - Account
-7. Admin tabs:
-   - Enroll
-   - History
-   - Account
-   - No Verify tab, because admin may not be a field worker.
-8. Account tab supports Switch Worker / Exit Admin.
+## What Is Left To Do (Deadline: 05 June 2026)
+
+### Must Do Before Submission
+1. **iOS EAS build** — run `eas build --platform ios --profile preview`, upload .ipa to appetize.io
+2. **INTEGRATION.md** — how Datalake 3.0 imports the module, props API, npm install steps
+3. **PPT 12 slides** — problem, solution, architecture, liveness design, model specs, benchmarks, innovation, limitations, demo plan, integration, team, tech stack
+4. **Demo video** — 6 steps on Vivo V30 (airplane mode, spoof rejected, real face accepted, outdoor, WiFi on, sync, Supabase dashboard)
+5. **README update** — inference pipeline description is slightly outdated (still mentions crop)
+6. **Re-enroll worker after rebuild** — new models from Person 1 = old embeddings invalid
+
+### Nice To Have
+- Update benchmark table in README with real Vivo V30 numbers once tested
+
+---
 
 ## Demo Credentials
-Worker:
-- Employee ID: `EMP001`
-- Passcode: `1234`
-- Name: Rajesh Kumar
-- Department: Engineering
+- Worker: EMP001 / 1234 (Rajesh Kumar, Engineering)
+- Admin PIN: ADMIN1234
 
-Admin:
-- PIN: `ADMIN1234`
+---
 
-## Current Model Files
-TFLite files exist in both:
-- `assets/models/`
-- `ml/models/tflite/`
+## Current Tech Stack
+- Expo SDK 56.0.4, React Native 0.85.3, React 19.2.3
+- Camera: react-native-vision-camera v4
+- TFLite: react-native-fast-tflite v3
+- Frame resize: vision-camera-resize-plugin v3
+- Worklets: react-native-worklets-core v1
+- SQLite: expo-sqlite SDK 56
+- GPS: expo-location SDK 56
+- Sync: @supabase/supabase-js v2 + @react-native-community/netinfo v12
+- Navigation: @react-navigation/native + bottom tabs
 
-Files:
-- `blazeface.tflite` - 229,032 bytes
-- `facemesh.tflite` - 1,242,398 bytes
-- `liveness.tflite` - 1,709,800 bytes
-- `mobilefacenet.tflite` - 2,894,904 bytes
+---
 
-Total bundle is about 6.08 MB, under the 20 MB target.
+## Model Files (Person 1 Final — Pull From ml/person1 Branch)
 
-## Current ModelBridge Status
-- `ModelBridge.js` lazy-requires `react-native-fast-tflite` for startup loading/logging.
-- This was done to avoid early Nitro boot crashes like:
-  `Failed to install Nitro! ReactApplicationContext.javaScriptContextHolder is null`.
-- `App.js` no longer imports `ModelBridge` at top level.
-- `App.js` calls model loading after DB/app boot using a delayed `loadAppModels`.
-- `loadModels()` attempts to load:
-  - BlazeFace
-  - FaceMesh
-  - Liveness
-  - MobileFaceNet
-- CPU delegates are passed as `[]`.
-- `runLiveness(imageData)` and `runRecognition(imageData)` remain available helper APIs.
-- No face detection post-processing exists yet.
-- No FaceMesh landmark parsing exists yet.
-- No embedding comparison exists yet.
-- `CameraView.js` now also runs live frame inference with:
-  - `react-native-worklets-core`
-  - `vision-camera-resize-plugin`
-  - `react-native-fast-tflite`
-- It resizes live frames to model input sizes, runs liveness + MobileFaceNet, and reports latest liveness score + embedding to screens.
-- This requires full native rebuild after installing dependencies.
-
-## Current Database
-SQLite DB: `faceauth.db`
-
-Tables:
-- `workers`
-  - `id TEXT PRIMARY KEY`
-  - `employee_id TEXT UNIQUE NOT NULL`
-  - `name TEXT NOT NULL`
-  - `department TEXT`
-  - `passcode TEXT`
-  - `embedding TEXT`
-  - `enrolled_at INTEGER`
-- `attendance`
-  - `id TEXT PRIMARY KEY`
-  - `worker_id TEXT NOT NULL`
-  - `employee_id TEXT NOT NULL`
-  - `worker_name TEXT`
-  - `timestamp INTEGER NOT NULL`
-  - `gps_lat REAL`
-  - `gps_lng REAL`
-  - `confidence REAL`
-  - `synced INTEGER DEFAULT 0`
-- `app_config`
-  - `key TEXT PRIMARY KEY`
-  - `value TEXT`
-- `failure_log`
-  - `id TEXT PRIMARY KEY`
-  - `type TEXT NOT NULL`
-  - `timestamp INTEGER NOT NULL`
-  - `details TEXT`
-
-Implemented APIs:
-- `initDB()`
-- `getWorkerByEmployeeId(employeeId)`
-- `getAllWorkers()`
-- `saveWorker()`
-- `enrollWorker(employeeId, name, department, passcode, embedding)`
-- `logAttendance({ workerId, employeeId, workerName, gpsLat, gpsLng, confidence })`
-- `getAttendanceHistory(limit)`
-- `getRecentAttendance(limit)`
-- `getPendingCount()`
-- `getUnsyncedCount()`
-- `getUnsyncedAttendance()`
-- `getUnsyncedRecords()`
-- `markSynced(ids)`
-- `deleteSynced()`
-- `logFailure(type, details)`
-- `getFailureLog(limit)`
-- `setConfig(key, value)`
-- `getConfig(key)`
-- `deleteConfig(key)`
-
-## Current Screens
-- `LaunchScreen.js`
-  - FaceAuth branded launch/loading screen.
-- `OnboardingScreen.js`
-  - Worker/admin mode selector.
-  - Worker login with employee ID + passcode.
-  - Admin login with PIN.
-- `AuthScreen.js`
-  - Worker dashboard.
-  - Good Morning/Afternoon/Evening greeting.
-  - Worker name and initials profile badge.
-  - Pending count badge.
-  - Mounts `CameraView`.
-- Current Verify flow shows a random active liveness prompt before capture.
-- Challenge options: blink, turn left, turn right, smile.
-- The challenge is currently a UI gate only; it still needs FaceMesh/liveness-model validation.
-- After challenge is armed, Verify captures a photo, requires live model output, checks liveness score, checks stored worker embedding, and only logs attendance on match.
-  - GPS is attempted through `expo-location`.
-  - Logs failures to `failure_log`.
-  - Has basic failed-attempt count and short lockout.
-- Important gap: it asks for blink/turn/smile, but does not yet detect that gesture from model output.
-- `CameraView.js`
-  - Defensive VisionCamera wrapper.
-  - Lazy-requires `react-native-vision-camera`.
-  - Shows fallback if camera module is unavailable, permission missing, or no front camera.
-  - Exposes `capturePhoto()` through ref.
-- `EnrollScreen.js`
-  - Worker enrollment form.
-  - Admin PIN flow when opened from worker mode.
-  - Admin mode skips PIN.
-  - Requires name, employee ID, optional department, worker passcode.
-  - Simulates 5-frame capture.
-  - Saves worker to SQLite.
-- Important gap: does not capture real frames or create embedding yet.
-- Duplicate guard now blocks same normalized worker name.
-- Duplicate face guard exists in `DatabaseService.findPotentialDuplicateWorker()` and will block when embeddings are supplied.
-- Enroll now mounts live camera inference and captures 5 live embeddings, averages them, and stores the average in `workers.embedding`.
-- `HistoryScreen.js`
-  - Reads SQLite attendance.
-  - Pull-to-refresh.
-  - Shows pending/synced counts.
-  - Shows recent failure issues.
-- `AccountScreen.js`
-  - Shows current worker/admin session.
-  - Switch Worker / Exit Admin.
-- `BottomNav.js`
-  - Custom React Navigation tab bar.
-- `SuccessScreen.js`
-  - Exists but is not currently central to navigation.
-
-## Current Sync
-- `SyncService.js` listens to NetInfo.
-- Uses `syncInProgress` guard.
-- Uploads unsynced attendance to Supabase.
-- Marks synced and deletes local synced rows after success.
-- Has fallback for old Supabase schema missing `employee_id`.
-- Important gap: remote Supabase attendance table should still be updated properly.
-
-## Native / Config State
-- `metro.config.js` includes `.tflite` asset extension.
-- `app.json` includes:
-  - `expo-sqlite`
-  - `expo-secure-store`
-  - `react-native-vision-camera`
-  - Android permissions: Camera, coarse location, fine location.
-- `android/app/src/main/AndroidManifest.xml` includes:
-  - Camera permission
-  - Record audio permission
-  - Coarse location permission
-  - Fine location permission
-
-## Verified By Codex
-On 30 May 2026:
-- `node --check` passed for `App.js`.
-- `node --check` passed for all `src/**/*.js`.
-- `app.json` parsed successfully.
-- Model files exist in `assets/models`.
-- Expo SDK 56 docs were checked as required by `AGENTS.md`.
-
-## Latest User Concern
-User correctly noticed:
-- Verify previously approved after one photo capture.
-- It did not ask for blink, tilt, smile, or any active liveness challenge.
-- It could approve the same real person under different employee names/IDs because real embeddings and duplicate matching were not implemented.
-
-Current patch:
-- `AuthScreen.js` now shows a random active challenge before capture.
-- `DatabaseService.js` now has duplicate identity helper logic.
-- `EnrollScreen.js` now blocks duplicate worker names and is ready to surface duplicate face errors.
-
-Still required: A UI-only challenge prompt is not enough for PRD. The real fix requires:
-- Capture frame/image.
-- Run FaceMesh or liveness model.
-- Detect blink/head turn/smile.
-- Run MobileFaceNet.
-- Compare embedding against logged-in worker.
-- During enrollment, compare new embedding against all existing worker embeddings and block duplicates above threshold.
-
-## Current High-Priority Gaps
-1. Real active gesture validation.
-   - Need random challenge: blink, turn left/right, smile.
-   - Need actual gesture detection using FaceMesh landmarks.
-   - Need timeout and failure logging.
-
-2. Real face recognition.
-   - Live MobileFaceNet embedding is wired from center-cropped frame.
-   - Need proper BlazeFace detection/crop instead of center crop.
-   - Need confirm model normalization and threshold with Person 1.
-   - Need threshold from Person 1.
-
-3. Real enrollment quality.
-   - 5 live embeddings are captured and averaged now.
-   - Need proper face crop and quality checks.
-   - Need validate duplicate face threshold with real data.
-
-4. Camera validation on physical Vivo V30.
-   - ADB sees phone serial: `10BE6DF610008Z`.
-   - Emulator also connected: `emulator-5554`.
-   - If Expo cannot target serial using `--device`, set:
-     `set ANDROID_SERIAL=10BE6DF610008Z`
-     then run:
-     `npx expo run:android`
-
-5. Supabase schema.
-   - Local schema has `employee_id`.
-   - Remote schema may not.
-   - Fallback exists but proper SQL migration is still needed.
-
-6. Documentation and demo.
-   - README, integration guide, benchmark table, PPT/PDF, demo video still needed.
-
-7. iOS.
-   - EAS iOS/Appetize build not done.
-
-## Recommended Next Work Order
-1. Rebuild Android after new native dependencies:
-   `npx expo run:android`
-2. Enroll EMP001 again so it has a real `workers.embedding`.
-3. Test Verify with the same enrolled worker.
-4. Confirm liveness output direction with Person 1.
-5. Confirm MobileFaceNet threshold with Person 1.
-6. Wire FaceMesh landmark interpretation for blink/head-turn/smile.
-7. Add BlazeFace crop instead of center crop.
-8. Update Supabase schema.
-9. Finish docs and demo video.
-
-## Important Commands
-Use Java 17:
-`C:\Users\hp\AppData\Local\Programs\Eclipse Adoptium\jdk-17.0.19.10-hotspot`
-
-Start Metro clean:
-```bat
-npx expo start --clear --dev-client
-```
-
-Run Android:
-```bat
-npx expo run:android
-```
-
-Target Vivo V30 when emulator is also attached:
-```bat
-set ANDROID_SERIAL=10BE6DF610008Z
-npx expo run:android
-```
-
-Check ADB:
-```bat
-adb devices
-```
-
-If `adb` is not recognized:
-```bat
-%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe devices
-```
-
-Focused Kotlin check:
-```bat
-cd android
-gradlew.bat :app:compileDebugKotlin --console=plain
-```
-
-Pull ML branch:
+Pull command:
 ```bat
 git fetch origin ml/person1
 git checkout FETCH_HEAD -- ml/models/tflite
 copy ml\models\tflite\*.tflite assets\models\
 ```
 
-## Worktree Notes
-Worktree is dirty and contains active hackathon work.
+| Model | File | Size | Input | Output | Notes |
+|---|---|---|---|---|---|
+| BlazeFace | blazeface.tflite | 229 KB | [1,128,128,3] float32 | [1,896,16] float32 | Face detection only, MediaPipe unmodified |
+| FaceMesh | facemesh.tflite | 1.2 MB | [1,192,192,3] float32 | [1,1,1,1404] float32 | Bundled, NOT used in live path |
+| Liveness | liveness.tflite | 1.71 MB | [1,224,224,3] float32 | [1,1] float32 | Raw LOGIT output — MUST apply sigmoid |
+| MobileFaceNet | mobilefacenet.tflite | 2.89 MB | [1,112,112,3] float32 | [1,128] float32 | L2-normalised output — dot product = cosine |
+| **Total** | | **6.08 MB** | | | Under 20 MB ✓ |
 
-Known changed/untracked areas:
-- `AGENTS.md`
-- `context.md`
-- `App.js`
-- `app.json`
-- `android/app/src/main/AndroidManifest.xml`
-- `metro.config.js`
-- `package.json`
-- `package-lock.json`
-- `src/bridges/ModelBridge.js`
-- `src/components/CameraView.js`
-- `src/components/BottomNav.js`
-- `src/screens/LaunchScreen.js`
-- `src/screens/OnboardingScreen.js`
-- `src/screens/AuthScreen.js`
-- `src/screens/EnrollScreen.js`
-- `src/screens/HistoryScreen.js`
-- `src/screens/AccountScreen.js`
-- `src/screens/SuccessScreen.js`
-- `src/services/DatabaseService.js`
-- `src/services/SyncService.js`
-- `assets/models/`
-- `ml/models/tflite/`
-- `android/.kotlin/` generated logs
+### CRITICAL Model Facts From Person 1
+- **Liveness outputs RAW LOGITS** — NOT sigmoid probabilities. MUST apply sigmoid in JS:
+  `score = 1 / (1 + Math.exp(-rawLogit))`
+  Real face after sigmoid: > 0.65. Spoof: < 0.40.
+- **MobileFaceNet is L2-normalised** — dot product equals cosine similarity. Different people score 0.00 to -0.18. Same person (ideal): ~0.99 but real camera captures score 0.50-0.70.
+- **Liveness trained on SYNTHETIC data** (3000 real + 3000 spoof synthetic images, NOT CelebA-Spoof — Google Drive was rate limited). 100% TPR/TNR on synthetic test set only. Real-world performance unknown.
+- **Recognition tested on same-image+noise only** — NOT real diverse face pairs. 99% was unrealistic lab number.
+- FaceMesh output shape is [1,1,1,1404] — reshape to 468×3 landmarks if ever used.
+- CoreML not available (coremltools requires Mac OS). iOS uses same TFLite files via react-native-fast-tflite.
 
-Do not revert unrelated changes. Do not expose Supabase keys in messages or docs.
+---
+
+## Current Inference Pipeline (CameraView.js)
+
+Two separate ticks per camera frame:
+
+**Tick A — BlazeFace (every 250ms):**
+- Runs BlazeFace on full frame at 128×128
+- Updates `faceDetectedFlag` shared value
+- Does NOT affect liveness or recognition input
+- Used only for "Face ✓" indicator in UI
+
+**Tick B — Liveness + Recognition (every 350ms):**
+- Always uses FULL FRAME — no crop
+- This is critical: enroll and verify must use same input distribution so embeddings match
+- Liveness: resize to 224×224, run model, apply sigmoid to raw logit output
+- Recognition: resize to 112×112, run model, get 128-float L2-normalised embedding
+- Reports to UI: `{ ready, livenessScore (sigmoid), embedding, faceDetected }`
+
+Models are preloaded during LaunchScreen via ModelCache.js (background, fire-and-forget).
+
+---
+
+## Current Thresholds
+
+| Constant | Value | Location | Notes |
+|---|---|---|---|
+| LIVENESS_THRESHOLD | 0.55 | AuthScreen.js | After sigmoid. Real face > 0.65 per Person 1, relaxed to 0.55 for camera variation |
+| RECOGNITION_THRESHOLD | 0.45 | AuthScreen.js | Dot product. Real camera same-person scores 0.50-0.70, different people 0.00 to -0.18 |
+| CHALLENGE_CONFIDENCE_MIN | 0.65 | AuthScreen.js | Min liveness during 3s challenge window — requires 2+ readings above this |
+| BLAZEFACE_SCORE_THRESHOLD | 0.35 | CameraView.js | Face detection confidence |
+| ACTIVE_CHECK_MS | 3000 | AuthScreen.js | Challenge window duration |
+| RECOGNITION_THRESHOLD | 0.75 | CameraView.js | Reported in inference object (not used for matching — AuthScreen uses its own 0.45) |
+| Duplicate face threshold | 0.45 | DatabaseService.js | findPotentialDuplicateWorker default |
+
+---
+
+## Challenge / Liveness System
+
+### How it works
+1. User taps "Start Verification" — random challenge shown (Blink / Turn Left / Turn Right)
+2. 3 second window starts — liveness scores collected every 350ms
+3. At window end: check if at least 2 readings >= 0.65 (CHALLENGE_CONFIDENCE_MIN)
+4. If yes → challenge confirmed, "Mark Attendance" button enabled
+5. If no → challenge resets, user must retry with better lighting/positioning
+6. On capture: liveness score must be >= 0.55 AND face match >= 0.45
+
+### Why smile was removed
+The liveness model cannot detect smile — it's a binary real/spoof classifier, not a gesture detector. Smile doesn't cause any change in real/spoof score. Only blink and head turn cause brief score changes (face partially occluded).
+
+### Why variance detection was abandoned
+Liveness was trained on synthetic JPEG-artifact data — score variance on a real camera is too small and inconsistent. The timed window + minimum liveness score approach is more reliable.
+
+---
+
+## Current App Flow
+1. LaunchScreen (DB init + model preload)
+2. OnboardingScreen (Worker login: ID + passcode | Admin login: PIN)
+3. **Worker Dashboard** (3 tabs):
+   - **Verify** — face recognition attendance. Shows "already marked today" guard if attendance already logged. Shows "face not enrolled" warning if no embedding.
+   - **MyHistory** — filtered to this worker's records only. No sync banner.
+   - **Profile** — name, ID, dept, face enrolled status, today's attendance status, explicit red Logout button.
+4. **Admin Dashboard** (4 tabs):
+   - **Overview** — today count, active workers, pending sync, recent 5 records, Sync Now button.
+   - **Workers** — searchable list, "✓ Enroll" button opens EnrollScreen as a modal slide-up, Remove per worker.
+   - **Attendance** — full log (all workers), date filter (Today/Week/All), sync banner, failure log section.
+   - **Settings** — session info, app version, failure log count, clear failures, explicit red Logout button.
+
+## New Screens Added
+- `src/screens/AdminOverviewScreen.js` — admin stats dashboard
+- `src/screens/ProfileScreen.js` — worker profile + logout
+- `src/screens/SettingsScreen.js` — admin settings + logout
+- `src/screens/WorkersScreen.js` — updated with search + Enroll button
+
+## RBAC Changes
+- Worker tabs: Verify, MyHistory, Profile (no Enroll tab, no admin data)
+- Admin tabs: Overview, Workers, Attendance, Settings (no Verify tab)
+- Worker History filtered by employee_id — cannot see other workers' records
+- Enroll is admin-only — no standalone tab, opened as modal from Workers tab
+- Explicit Logout button in Profile (worker) and Settings (admin)
+
+## New Features
+- Already-marked-today guard in AuthScreen — if worker marked attendance today, camera is replaced with green confirmation screen, button disabled
+- No-template warning in AuthScreen — if worker has no face enrolled, shows amber warning instead of camera
+- Date filter in Admin Attendance (Today / This Week / All)
+- Search in Workers list by name or ID
+- Enroll as modal slide-up from Workers tab (not standalone tab)
+- onDone callback on EnrollScreen — modal closes after successful enrollment
+- Close button (✕) on EnrollScreen when opened as modal
+
+---
+
+## Database (SQLite — faceauth.db)
+
+Tables: workers, attendance, app_config, failure_log
+
+Key: workers.embedding is JSON array of 128 floats (L2-normalised MobileFaceNet output)
+
+DatabaseService uses **dot product** (not full cosine) for similarity — correct for L2-normalised vectors.
+
+---
+
+## Sync (SyncService.js)
+
+- NetInfo listener — fires syncNow() only on offline→online transition
+- syncNow() maps SQLite records to exact Supabase columns (id, worker_id, employee_id, worker_name, timestamp, gps_lat, gps_lng, confidence)
+- Drops local-only `synced` field before sending
+- Full error logging: code, message, details, hint all logged to Metro console
+- onSyncStateChange() pub/sub — HistoryScreen subscribes and shows live banner
+- deleteSynced() keeps records for 24h after sync so UI can show "✓ Synced"
+
+### Supabase Table: attendance
+All columns exist and confirmed:
+id TEXT, worker_id TEXT NOT NULL, employee_id TEXT, worker_name TEXT,
+timestamp BIGINT NOT NULL, gps_lat FLOAT, gps_lng FLOAT, confidence FLOAT,
+synced INTEGER, device_id TEXT, created_at TIMESTAMP
+
+RLS must have these policies (run in SQL Editor if sync fails):
+```sql
+ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon insert" ON attendance;
+DROP POLICY IF EXISTS "Allow anon select" ON attendance;
+CREATE POLICY "Allow anon insert" ON attendance FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon select" ON attendance FOR SELECT TO anon USING (true);
+```
+
+### Sync Troubleshooting
+If "[Sync] No unsynced records found" — mark attendance first, then check History tab for "Pending" banner
+If sync fails silently — check Metro console for [Sync] error/code/message/hint lines
+Supabase credentials in src/services/config.js (gitignored)
+
+---
+
+## UI Notes
+- Theme: olive green (#5C6B3A) + off-white (#F5F5E8) — DO NOT change
+- NO internal scores shown to users (no liveness %, no match %)
+- Scores still logged to Metro console for debugging
+- Camera overlay shows "Face detected" (not "Face detected · 73% live")
+- Success alert shows: worker name + time + "Location recorded"
+- Fail alert (face): "We could not verify your identity. Face camera directly..."
+- Fail alert (liveness): "Please face the camera directly in good lighting..."
+
+---
+
+## Files Changed (Dirty Worktree)
+- App.js — full rewrite: worker 3 tabs, admin 4 tabs, EnrollScreen as modal
+- src/components/BottomNav.js — unicode icons, new tab names
+- src/screens/AuthScreen.js — already-marked-today guard, no-template guard, checkTodayRecord
+- src/screens/HistoryScreen.js — workerFilter prop, showSync prop, showFailures prop, date filter
+- src/screens/EnrollScreen.js — onDone prop, close button for modal use
+- src/screens/WorkersScreen.js — search bar, Enroll button, onEnrollNew prop
+- src/screens/OnboardingScreen.js — removed demo hint
+- src/screens/ProfileScreen.js — NEW: worker profile + logout
+- src/screens/SettingsScreen.js — NEW: admin settings + logout
+- src/screens/AdminOverviewScreen.js — NEW: admin stats dashboard
+- src/services/DatabaseService.js — added getAttendanceByEmployee, getTodayAttendanceByEmployee, getAttendanceSummary, getRecentAttendanceAll
+- src/services/SyncService.js — explicit column mapping, full error logging, pub/sub state
+- src/services/ModelCache.js — background model preload during launch
+- src/services/config.js — Supabase credentials (NOT gitignored — needed for EAS build)
+- src/services/config.example.js — template for teammates
+- src/screens/AccountScreen.js — REPLACED by ProfileScreen + SettingsScreen (file still exists but no longer used)
+
+---
+
+## Important Commands
+
+Build + run on Vivo V30:
+```bat
+set JAVA_HOME=C:\Users\hp\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2
+set ANDROID_SERIAL=10BE6DF610008Z
+npm run android
+```
+
+Metro clean:
+```bat
+npx expo start --clear --dev-client
+```
+
+ADB check:
+```bat
+%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe devices
+```
+
+Kotlin compile check:
+```bat
+cd android
+set JAVA_HOME=C:\Users\hp\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2
+gradlew.bat :app:compileDebugKotlin --console=plain
+```
+
+iOS EAS build (run this — takes ~20 min on Expo servers, no Mac needed):
+```bat
+eas build --platform ios --profile preview
+```
+
+Pull Person 1 models:
+```bat
+git fetch origin ml/person1
+git checkout FETCH_HEAD -- ml/models/tflite
+copy ml\models\tflite\*.tflite assets\models\
+```
+
+---
+
+## Known Remaining Gaps
+
+| Priority | Gap | Notes |
+|---|---|---|
+| HIGH | iOS build not done | Run eas build command above |
+| HIGH | INTEGRATION.md missing | How Datalake 3.0 imports module |
+| HIGH | PPT 12 slides missing | Person 1's benchmark numbers available |
+| HIGH | Demo video not recorded | 6-step script in README |
+| MEDIUM | Sync pending issue | If "No unsynced records" — records may already be synced or not logged yet |
+| MEDIUM | Recognition accuracy on real diverse faces unknown | Person 1 tested on synthetic only |
+| MEDIUM | Liveness on real spoofs unknown | Trained on synthetic JPEG-artifact data |
+| LOW | Worker passcodes in plain SQLite | expo-secure-store installed but unused |
+| LOW | README inference pipeline description slightly outdated | Still mentions crop |
+
+---
+
+## Person 1 (ML Lead) Status
+- Available: NO (offline from 03 June 2026)
+- All models pushed to ml/person1 branch ✅
+- Benchmark numbers available (synthetic test — see ACTUAL-EXECUTION-REPORT.md)
+- Pipeline speed: ~119ms total (BlazeFace 2.6ms, FaceMesh 80ms, Liveness 29.6ms, MobileFaceNet 6.4ms)
+- No CoreML — TFLite works on iOS via react-native-fast-tflite
+
+---
+
+## Collaboration Rules
+- DO NOT edit /ml/ folder
+- Copy models from ml/models/tflite to assets/models — never move
+- Keep olive green/off-white theme
+- DO NOT expose Supabase keys in docs or messages
+- Preserve dirty worktree — do not revert unrelated changes
+- Always Babel syntax check after editing JS: node -e "const babel=require('@babel/core');const fs=require('fs');babel.transformSync(fs.readFileSync('FILE','utf8'),{filename:'FILE',presets:['babel-preset-expo']});console.log('OK')"
