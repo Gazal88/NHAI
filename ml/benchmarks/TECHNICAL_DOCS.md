@@ -1,45 +1,210 @@
-# Technical Documentation — ML Models
-## Hackathon 7.0 | Person 1 (ML Lead)
+# Technical Documentation
+## Pehchaan — Offline Facial Recognition Attendance System
+### Hackathon 7.0 | Team of 2
 
-## Model Pipeline Summary
+---
 
-| Model | File | Size | Latency | Input | Output |
-|-------|------|------|---------|-------|--------|
-| BlazeFace | blazeface.tflite | 0.23 MB | 2.6 ms | [1,128,128,3] | Face bbox |
-| Face Mesh | facemesh.tflite | 3.76 MB | ~80 ms | [1,192,192,3] | 468 landmarks |
-| Liveness | liveness.tflite | 1.71 MB | 29.6 ms | [1,224,224,3] | Score 0-1 |
-| MobileFaceNet | mobilefacenet.tflite | 2.89 MB | 6.4 ms | [1,112,112,3] | 128-dim emb |
-| **TOTAL** | | **8.59 MB** | **~119 ms** | | |
+## System Architecture
 
-## Liveness Model
-- Architecture: MobileNetV3-Small, ImageNet pretrained
-- Task: Binary classification real(1) vs spoof(0)
-- Training: 6000 images (3000 real, 3000 spoof), 30 epochs
-- TPR: 100% | TNR: 100% on training set
-- Threshold: score > 0.65 = live, < 0.40 = spoof
+```
+React Native App (Expo SDK 56)
+    │
+    ├── CameraView.js
+    │     ├── Tick A (250ms): BlazeFace → face detected indicator
+    │     └── Tick B (350ms): Liveness + MobileFaceNet → score + embedding
+    │
+    ├── AuthScreen.js — verify attendance
+    │     ├── Active gesture challenge (blink / head turn, 3s window)
+    │     ├── Liveness score gate (sigmoid > 0.55)
+    │     └── Face embedding match (dot product > 0.45)
+    │
+    ├── EnrollScreen.js — 5-frame enrollment
+    │     └── Average 5 embeddings → store in SQLite
+    │
+    ├── DatabaseService.js — expo-sqlite WAL mode
+    └── SyncService.js — NetInfo + Supabase (offline→online trigger)
+```
 
-## Face Recognition
-- Architecture: MobileNetV2 backbone, 128-dim L2-normalised embedding
-- Match threshold: cosine similarity > 0.75
-- Latency: 6.4 ms CPU
+---
 
-## Gesture Detection
-- Blink: EAR < 0.25 for 2 consecutive frames
-- Head turn: yaw > 20 degrees left or right
-- Both implemented in gesture_algorithms.py
+## Model 1: BlazeFace
 
-## CLAHE Preprocessing
-- Applied to face crops before inference
-- Handles outdoor lighting, shadows, overexposure
-- Implemented in clahe_preprocessing.py
+| Property | Value |
+|---|---|
+| Source | Google MediaPipe (unmodified) |
+| File | blazeface.tflite |
+| Size | 0.23 MB |
+| Input | [1, 128, 128, 3] float32 |
+| Output | [1, 896, 1] scores + [1, 896, 16] boxes |
+| Latency | 2.6 ms CPU |
+| Purpose | Real-time face detection — provides faceDetected indicator in UI |
+| License | Apache 2.0 |
 
-## iOS Support
-- react-native-fast-tflite runs TFLite natively on iOS
-- No CoreML conversion required
-- Same .tflite files work on Android and iOS
+**How it works:** SSD-based face detector with 896 anchor boxes at 128×128. Scores are sigmoid probabilities. Threshold: 0.35. Used only for the "Face ✓" UI indicator — does not affect liveness or recognition input.
 
-## Brief Compliance
-- Total size: 8.59 MB (limit: 20 MB) OK
-- Pipeline speed: ~119 ms (limit: 1000 ms) OK
-- All models open source: MIT/Apache 2.0 OK
-- Accuracy > 95%: OK
+---
+
+## Model 2: Face Mesh
+
+| Property | Value |
+|---|---|
+| Source | Google MediaPipe face_landmark.tflite |
+| File | facemesh.tflite |
+| Size | 1.21 MB |
+| Input | [1, 192, 192, 3] float32 |
+| Output | [1, 1, 1, 1404] float32 (468 × 3 landmarks) |
+| Latency | ~80 ms CPU |
+| Purpose | Bundled for future gesture expansion |
+| License | Apache 2.0 |
+
+**Status:** Bundled in assets but not active in the live inference path. Excluded from pipeline timing. A FaceMesh-based gesture detection experiment was removed due to memory instability on the target device. The active gesture system uses the liveness model score window instead.
+
+---
+
+## Model 3: Liveness Detection
+
+| Property | Value |
+|---|---|
+| Architecture | MobileNetV3-Small |
+| Pretrained weights | ImageNet |
+| File | liveness.tflite |
+| Size | 1.71 MB |
+| Input | [1, 224, 224, 3] float32 |
+| Output | [1, 1] float32 — RAW LOGIT (not sigmoid) |
+| Latency | 29.6 ms CPU |
+| License | BSD 3-Clause (base) |
+
+**Output format:** Raw logit. Must apply sigmoid before use: `score = 1 / (1 + exp(-logit))`. After sigmoid: real face > 0.65, spoof < 0.40.
+
+**Training:**
+- Base: MobileNetV3-Small with ImageNet pretrained weights
+- Task: Binary classification — real face (1) vs spoof (0)
+- Dataset: Synthetic — 3000 real (smooth skin-tone, slight blur) + 3000 spoof (JPEG artifact + banding pattern overlay)
+- Augmentation: Random brightness ±30%, Gaussian blur, rotation ±15°, horizontal flip
+- Epochs: 30 — ~30s per epoch on RTX 4050
+- Export: PyTorch → ONNX → onnx2tf → TFLite (Windows compatible path)
+- Accuracy: 100% TPR / 100% TNR on held-out synthetic test set
+
+**In the app:**
+- Sigmoid applied to raw logit in CameraView.js frame processor
+- Liveness gate at verify: sigmoid score > 0.55
+- Active challenge: 3s window, requires 2+ readings > 0.65
+
+---
+
+## Model 4: Face Recognition (MobileFaceNet)
+
+| Property | Value |
+|---|---|
+| Architecture | MobileNetV2 backbone + 128-dim embedding head |
+| Pretrained weights | ImageNet (torchvision) |
+| File | mobilefacenet.tflite |
+| Size | 2.89 MB |
+| Input | [1, 112, 112, 3] float32 |
+| Output | [1, 128] float32 — L2-normalised |
+| Latency | 6.4 ms CPU |
+| License | MIT |
+
+**Output format:** L2-normalised 128-dim vector. Cosine similarity = dot product (no division needed).
+
+**Similarity ranges:**
+- Same person (controlled): ~0.99
+- Different people (random): 0.00 to -0.18
+- App recognition threshold: 0.45 (tuned for real camera variation with lighting and angle differences)
+- Duplicate face guard (enrollment): 0.45
+
+**Enrollment:** 5 frames captured, embeddings averaged, stored as JSON in SQLite `workers.embedding` column.
+
+**Export path:** MobileNetV2 trained in PyTorch → Keras weight mapping → TFLite via SavedModel conversion.
+
+---
+
+## Inference Pipeline (App Side)
+
+Two independent ticks per camera frame (react-native-fast-tflite via VisionCamera frame processor):
+
+```
+Tick A — every 250ms:
+  BlazeFace @ 128×128 → faceDetected boolean
+
+Tick B — every 350ms:
+  Full frame → resize to 224×224 → Liveness → sigmoid(logit) → livenessScore
+  Full frame → resize to 112×112 → MobileFaceNet → 128-dim embedding
+```
+
+Both ticks run in a Reanimated worklet on a dedicated thread — no UI blocking.
+
+---
+
+## Database Schema (SQLite — expo-sqlite WAL mode)
+
+```sql
+workers (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  department TEXT,
+  passcode TEXT,
+  embedding TEXT,          -- JSON array of 128 floats
+  enrolled_at INTEGER,
+  active INTEGER DEFAULT 1,
+  email TEXT,
+  phone TEXT,
+  photo_uri TEXT
+)
+
+attendance (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL,
+  employee_id TEXT NOT NULL,
+  worker_name TEXT,
+  timestamp INTEGER NOT NULL,
+  gps_lat REAL,
+  gps_lng REAL,
+  confidence REAL,
+  synced INTEGER DEFAULT 0
+)
+```
+
+---
+
+## Sync Architecture
+
+- **Trigger:** NetInfo offline→online transition only (no polling)
+- **Target:** Supabase (Apache 2.0, AWS-compatible)
+- **Batch:** All unsynced records in one insert
+- **Purge:** Local records deleted only after server HTTP 200 ACK
+- **AWS migration:** Change 2 lines in `src/services/config.js`
+
+---
+
+## Open Source Compliance
+
+| Component | License |
+|---|---|
+| React Native / Expo | MIT |
+| react-native-vision-camera | MIT |
+| react-native-fast-tflite | MIT |
+| vision-camera-resize-plugin | MIT |
+| react-native-worklets-core | MIT |
+| BlazeFace (MediaPipe) | Apache 2.0 |
+| Face Mesh (MediaPipe) | Apache 2.0 |
+| MobileNetV3-Small (base) | BSD 3-Clause |
+| MobileNetV2 (base) | BSD 3-Clause |
+| expo-sqlite | MIT |
+| Supabase JS client | Apache 2.0 |
+| @react-native-community/netinfo | MIT |
+
+No proprietary licenses. No additional licenses required.
+
+---
+
+## Known Limitations
+
+| Limitation | Severity | Notes |
+|---|---|---|
+| Liveness trained on synthetic data | Medium | Real-world spoof robustness not benchmarked on CelebA-Spoof. Sufficient for prototype demonstration. |
+| Recognition tested on controlled pairs | Medium | Same-person accuracy on real diverse faces unvalidated. App threshold tuned conservatively at 0.45. |
+| iOS tested on Appetize.io simulator | Low | EAS cloud build produces real IPA. No Mac available for physical device testing. |
+| Identical twins | Low | Known limitation — admin override available. |
+| Extreme low-light (< 10 lux) | Low | UI prompts user to improve lighting. |
