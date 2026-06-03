@@ -44,7 +44,7 @@ docs/
 src/bridges/ModelBridge.js
 
 # Credential template (reveals project structure)
-src/services/config.example.js
-config.js
+src/services/config.js
+
 # typescript
 *.tsbuildinfo
