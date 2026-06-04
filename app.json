@@ -24,7 +24,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Pehchaan uses your location to tag attendance records."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "android": {
       "package": "com.pehchaan.app",

@@ -1,5 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
+import { Asset } from 'expo-asset';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 const RECOGNITION_THRESHOLD = 0.75;
@@ -171,12 +172,26 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const device = useCameraDevice('front');
   const { resize } = useResizePlugin();
 
-  // Core models — liveness + recognition always loaded
-  // useAssetManager: true is required for release APK builds on Android
-  const livenessPlugin    = useTensorflowModel(require('../../assets/models/liveness.tflite'), [{ useAssetManager: true }]);
-  const recognitionPlugin = useTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), [{ useAssetManager: true }]);
-  // BlazeFace — optional, only used for faceDetected indicator
-  const blazefacePlugin   = useTensorflowModel(require('../../assets/models/blazeface.tflite'), [{ useAssetManager: true }]);
+  // Resolve model URIs via expo-asset so they work in both dev and release APK
+  const [modelUris, setModelUris] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const [l, r, b] = await Promise.all([
+          Asset.fromModule(require('../../assets/models/liveness.tflite')).downloadAsync(),
+          Asset.fromModule(require('../../assets/models/mobilefacenet.tflite')).downloadAsync(),
+          Asset.fromModule(require('../../assets/models/blazeface.tflite')).downloadAsync(),
+        ]);
+        setModelUris({ liveness: l.localUri, recognition: r.localUri, blazeface: b.localUri });
+      } catch (e) {
+        console.log('[CameraView] Asset resolve failed:', e.message);
+      }
+    })();
+  }, []);
+
+  const livenessPlugin    = useTensorflowModel(modelUris ? { url: modelUris.liveness }    : null, []);
+  const recognitionPlugin = useTensorflowModel(modelUris ? { url: modelUris.recognition } : null, []);
+  const blazefacePlugin   = useTensorflowModel(modelUris ? { url: modelUris.blazeface }   : null, []);
 
   const livenessModel    = livenessPlugin.state    === 'loaded' ? livenessPlugin.model    : null;
   const recognitionModel = recognitionPlugin.state === 'loaded' ? recognitionPlugin.model : null;
