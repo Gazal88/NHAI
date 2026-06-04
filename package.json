@@ -8,6 +8,7 @@
     "@react-navigation/native": "^7.2.5",
     "@supabase/supabase-js": "2.45.0",
     "expo": "~56.0.8",
+    "expo-asset": "~56.0.15",
     "expo-image-picker": "~56.0.15",
     "expo-location": "~56.0.15",
     "expo-secure-store": "~56.0.4",
@@ -16,6 +17,7 @@
     "react": "19.2.3",
     "react-native": "0.85.3",
     "react-native-fast-tflite": "^3.0.1",
+    "react-native-nitro-modules": "^0.35.9",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-vision-camera": "4",
@@ -37,7 +39,11 @@
   "expo": {
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["react-native-fast-tflite", "vision-camera-resize-plugin", "expo-modules-jsi"],
+        "exclude": [
+          "react-native-fast-tflite",
+          "vision-camera-resize-plugin",
+          "expo-modules-jsi"
+        ],
         "listUnknownPackages": false
       }
     }
