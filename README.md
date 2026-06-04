@@ -1,7 +1,6 @@
 # Pehchaan — पहचान
 
 **Offline Facial Recognition Attendance System for NHAI Field Workers**
-Hackathon 7.0 · Submission: 05 June 2026
 
 ---
 
