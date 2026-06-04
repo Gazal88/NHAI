@@ -7,7 +7,11 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native
+# Native — let EAS Prebuild regenerate these
+android/
+ios/
+
+# Native build artifacts
 *.orig.*
 *.jks
 *.p8
@@ -33,6 +37,9 @@ yarn-error.*
 
 # Internal SQL tooling
 docs/supabase_migration.sql
+
+# Local presentation notes — not for repo
+docs/presentation_slides.md
 
 # Dead code
 src/bridges/ModelBridge.js
