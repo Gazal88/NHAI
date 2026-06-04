@@ -1,19 +1,17 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
-/** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-// Support TFLite model files
 config.resolver.assetExts.push('tflite');
 
-// Block OpenTelemetry dynamic import that breaks Hermes on iOS release builds
-// This comes from @supabase/supabase-js -> @opentelemetry packages
+// Block @opentelemetry packages — they use dynamic import() which breaks
+// Hermes on iOS release builds. Supabase pulls these in optionally.
+const emptyModule = path.resolve(__dirname, 'src/empty-module.js');
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (
-    moduleName.includes('@opentelemetry') ||
-    moduleName.includes('opentelemetry')
-  ) {
-    return { type: 'empty' };
+  if (moduleName.startsWith('@opentelemetry/')) {
+    return { type: 'sourceFile', filePath: emptyModule };
   }
   return context.resolveRequest(context, moduleName, platform);
 };
