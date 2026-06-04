@@ -1,14 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
+/**
+ * SyncService — uses plain fetch() instead of @supabase/supabase-js
+ * to avoid Node.js built-in dependencies (ws, stream) that break
+ * iOS Hermes builds.
+ */
 import NetInfo from '@react-native-community/netinfo';
 import { getUnsyncedRecords, markSynced, deleteSynced } from './DatabaseService';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: false },
-  global: {
-    fetch: (url, options) => fetch(url, options),
-  },
-});
+const ATTENDANCE_URL = `${SUPABASE_URL}/rest/v1/attendance`;
+
+const HEADERS = {
+  'Content-Type': 'application/json',
+  'apikey': SUPABASE_ANON_KEY,
+  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+  'Prefer': 'return=minimal',
+};
 
 let syncInProgress = false;
 let unsubscribeNetInfo = null;
@@ -34,9 +40,18 @@ export function onSyncStateChange(listener) {
 
 export function getSyncState() { return syncState; }
 
-const insertAttendanceRecords = async (records) => {
-  const remoteRecords = records.map(({ synced, ...rest }) => rest);
-  return supabase.from('attendance').insert(remoteRecords);
+const insertRecords = async (records) => {
+  const body = records.map(({ synced, ...rest }) => rest);
+  const res = await fetch(ATTENDANCE_URL, {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status}: ${text}`);
+  }
+  return res;
 };
 
 export const syncNow = async () => {
@@ -46,22 +61,25 @@ export const syncNow = async () => {
 
   try {
     const records = await getUnsyncedRecords();
-    if (!records || records.length === 0) { emitSyncState({ syncing: false }); return; }
-
-    console.log(`[Sync] Uploading ${records.length} record(s)…`);
-    const { error, data } = await insertAttendanceRecords(records);
-
-    if (error) {
-      console.log('[Sync] Failed:', error.message, error.code, error.hint);
-      emitSyncState({ syncing: false, error: `${error.message}${error.hint ? ' — ' + error.hint : ''}` });
+    if (!records || records.length === 0) {
+      emitSyncState({ syncing: false });
       return;
     }
+
+    console.log(`[Sync] Uploading ${records.length} record(s)…`);
+    await insertRecords(records);
 
     const ids = records.map((r) => r.id);
     await markSynced(ids);
     await deleteSynced();
+
     console.log(`[Sync] ✓ Synced ${ids.length} record(s)`);
-    emitSyncState({ syncing: false, lastSyncedCount: ids.length, lastSyncedAt: Date.now(), error: null });
+    emitSyncState({
+      syncing: false,
+      lastSyncedCount: ids.length,
+      lastSyncedAt: Date.now(),
+      error: null,
+    });
   } catch (err) {
     console.log('[Sync] Error:', err?.message ?? err);
     emitSyncState({ syncing: false, error: String(err?.message ?? err) });
@@ -75,7 +93,10 @@ export const startSyncLoop = () => {
   let wasConnected = null;
   unsubscribeNetInfo = NetInfo.addEventListener((state) => {
     const isNowConnected = state.isConnected === true;
-    if (isNowConnected && wasConnected !== true) { console.log('[Sync] Network online — triggering sync'); syncNow(); }
+    if (isNowConnected && wasConnected !== true) {
+      console.log('[Sync] Network online — triggering sync');
+      syncNow();
+    }
     wasConnected = isNowConnected;
   });
   return unsubscribeNetInfo;
