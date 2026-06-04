@@ -1,6 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
-import { Asset } from 'expo-asset';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 const RECOGNITION_THRESHOLD = 0.75;
@@ -172,26 +171,10 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const device = useCameraDevice('front');
   const { resize } = useResizePlugin();
 
-  // Resolve model URIs via expo-asset so they work in both dev and release APK
-  const [modelUris, setModelUris] = useState(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const [l, r, b] = await Promise.all([
-          Asset.fromModule(require('../../assets/models/liveness.tflite')).downloadAsync(),
-          Asset.fromModule(require('../../assets/models/mobilefacenet.tflite')).downloadAsync(),
-          Asset.fromModule(require('../../assets/models/blazeface.tflite')).downloadAsync(),
-        ]);
-        setModelUris({ liveness: l.localUri, recognition: r.localUri, blazeface: b.localUri });
-      } catch (e) {
-        console.log('[CameraView] Asset resolve failed:', e.message);
-      }
-    })();
-  }, []);
-
-  const livenessPlugin    = useTensorflowModel(modelUris ? { url: modelUris.liveness }    : null, []);
-  const recognitionPlugin = useTensorflowModel(modelUris ? { url: modelUris.recognition } : null, []);
-  const blazefacePlugin   = useTensorflowModel(modelUris ? { url: modelUris.blazeface }   : null, []);
+  // Direct require — works in dev/USB builds via Metro asset server
+  const livenessPlugin    = useTensorflowModel(require('../../assets/models/liveness.tflite'), []);
+  const recognitionPlugin = useTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), []);
+  const blazefacePlugin   = useTensorflowModel(require('../../assets/models/blazeface.tflite'), []);
 
   const livenessModel    = livenessPlugin.state    === 'loaded' ? livenessPlugin.model    : null;
   const recognitionModel = recognitionPlugin.state === 'loaded' ? recognitionPlugin.model : null;

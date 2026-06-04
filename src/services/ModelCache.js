@@ -1,5 +1,3 @@
-import { Asset } from 'expo-asset';
-
 let preloadStarted = false;
 
 export function preloadModels() {
@@ -18,20 +16,17 @@ async function _doPreload() {
     return;
   }
 
-  try {
-    // Resolve asset URIs via expo-asset — works correctly in both dev and release APK
-    const [l, r] = await Promise.all([
-      Asset.fromModule(require('../../assets/models/liveness.tflite')).downloadAsync(),
-      Asset.fromModule(require('../../assets/models/mobilefacenet.tflite')).downloadAsync(),
-    ]);
+  const results = await Promise.allSettled([
+    loadTensorflowModel(require('../../assets/models/liveness.tflite'), []),
+    loadTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), []),
+  ]);
 
-    await Promise.allSettled([
-      loadTensorflowModel({ url: l.localUri }, []),
-      loadTensorflowModel({ url: r.localUri }, []),
-    ]);
-
-    console.log('[ModelCache] Models preloaded ✓');
-  } catch (e) {
-    console.log('[ModelCache] Preload failed:', e?.message);
-  }
+  results.forEach((r, i) => {
+    const name = i === 0 ? 'liveness' : 'mobilefacenet';
+    if (r.status === 'fulfilled') {
+      console.log(`[ModelCache] ${name} preloaded ✓`);
+    } else {
+      console.log(`[ModelCache] ${name} preload failed:`, r.reason?.message);
+    }
+  });
 }
