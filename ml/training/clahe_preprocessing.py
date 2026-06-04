@@ -1,15 +1,4 @@
-"""
-clahe_preprocessing.py — CLAHE Contrast Enhancement for Face Crops
-Hackathon 7.0 | ML Lead (Person 1)
-
-Addresses brief requirement: "function reliably in varying outdoor lighting conditions
-(e.g., harsh sunlight, low light, shadows)"
-
-CLAHE = Contrast Limited Adaptive Histogram Equalisation
-Applied to face crops BEFORE passing to inference models.
-Person 2 implements equivalent using expo-image-manipulator.
-"""
-
+fi
 import os
 import numpy as np
 import cv2

@@ -1,8 +1,4 @@
-﻿"""
-benchmark.py — Full Benchmark Suite for All 4 TFLite Models
-Hackathon 7.0 | ML Lead (Person 1)
-FIXED VERSION
-"""
+﻿
 
 import os
 import sys
