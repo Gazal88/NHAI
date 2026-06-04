@@ -132,7 +132,7 @@ set ANDROID_SERIAL=YOUR_DEVICE_SERIAL
 npm run android
 ```
 
-**Android APK (pre-built):** [Download](https://expo.dev/artifacts/eas/dPWCsZ2JpYu9Btmy72EUoQ.apk)
+**Android APK (pre-built):** [Download](https://expo.dev/artifacts/eas/hqQwvEeGXCJ9XBJpyuR3T9.apk)
 
 ### 5. Run on iOS (EAS cloud build — no Mac needed)
 
