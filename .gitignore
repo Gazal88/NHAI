@@ -1,5 +1,3 @@
-
-
 # dependencies
 node_modules/
 
@@ -33,22 +31,23 @@ yarn-error.*
 .env*.local
 .env
 
-# Supabase credentials
-src/services/Config.js
-
-
-# Biometric calibration parameters — device-specific tuning
-# src/services/biometric.config.js
-
-
 # Internal SQL tooling
-docs/
+docs/supabase_migration.sql
 
-# Dead code / unused helpers
+# Dead code
 src/bridges/ModelBridge.js
 
-# Credential template (reveals project structure)
-src/services/config.js
+# ML training artifacts
+ml/checkpoints/
+ml/data/
+ml/logs/
+
+# Internal files
+ml/AGENTS.md
+ml/CONTEXT.md
+AGENTS.md
+context.md
+.claude/
 
 # typescript
 *.tsbuildinfo
