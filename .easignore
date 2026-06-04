@@ -1,0 +1,10 @@
+node_modules/
+ml/checkpoints/
+ml/data/
+ml/logs/
+.expo/
+android/
+ios/
+docs/*.apk
+docs/*.ipa
+*.pdf
