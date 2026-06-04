@@ -114,10 +114,10 @@ copy ml\models\tflite\*.tflite assets\models\
 ### 3. Supabase credentials
 
 ```bat
-copy src\services\config.example.js src\services\config.js
+copy src\services\Config.example.js src\services\Config.js
 ```
 
-Edit `src/services/config.js` with your Supabase URL and anon key.
+Edit `src/services/Config.js` with your Supabase URL and anon key.
 
 ### 4. Run on Android
 
