@@ -34,7 +34,8 @@ yarn-error.*
 .env
 
 # Supabase credentials
-src/services/config.js
+src/services/Config.js
+
 
 # Biometric calibration parameters — device-specific tuning
 src/services/biometric.config.js
