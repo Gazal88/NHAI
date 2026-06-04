@@ -121,11 +121,18 @@ Edit `src/services/Config.js` with your Supabase URL and anon key.
 
 ### 4. Run on Android
 
+> **First-time setup:** Create `android/local.properties` pointing to your Android SDK (this file is gitignored — must be created on each machine):
+> ```bat
+> echo sdk.dir=C:\Users\%USERNAME%\AppData\Local\Android\Sdk > android\local.properties
+> ```
+
 ```bat
 set JAVA_HOME=C:\Users\hp\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2
 set ANDROID_SERIAL=YOUR_DEVICE_SERIAL
 npm run android
 ```
+
+**Android APK (pre-built):** [Download](https://expo.dev/artifacts/eas/dPWCsZ2JpYu9Btmy72EUoQ.apk)
 
 ### 5. Run on iOS (EAS cloud build — no Mac needed)
 
@@ -134,6 +141,8 @@ npx eas-cli@latest build --platform ios --profile preview
 ```
 
 Upload the `.ipa` to appetize.io.
+
+**iOS live demo:** [https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq](https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq)
 
 ---
 
@@ -201,7 +210,7 @@ All dependencies are MIT / Apache 2.0. No proprietary licenses.
 ## Known Limitations
 
 - Liveness model trained on synthetic dataset — extreme real-world spoof robustness not benchmarked
-- iOS tested via EAS cloud build on Appetize.io (no physical iOS device available)
+- iOS tested via EAS cloud build on Appetize.io — [https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq](https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq)
 - Identical twins may produce false acceptance — admin override available
 
 ---

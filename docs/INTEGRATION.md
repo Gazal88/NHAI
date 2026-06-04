@@ -8,9 +8,16 @@ How to integrate the Pehchaan face recognition attendance module into the existi
 
 ```bash
 npm install
-# or
-yarn install
 ```
+
+> **Android — First-time setup:** After cloning, create `android/local.properties` with your SDK path (this file is gitignored and must be created on each machine):
+> ```bash
+> # Windows
+> echo sdk.dir=C:\Users\%USERNAME%\AppData\Local\Android\Sdk > android\local.properties
+>
+> # Mac/Linux
+> echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties
+> ```
 
 Required native dependencies (already in package.json):
 
@@ -248,3 +255,14 @@ export const SUPABASE_ANON_KEY = 'YOUR_AWS_CREDENTIALS';
 ```
 
 All sync logic, retry handling, and purge behavior remain identical.
+
+---
+
+## Live Demo
+
+**iOS on Appetize.io:** https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq
+
+**Build iOS (no Mac needed):**
+```bash
+eas build --platform ios --profile preview
+```

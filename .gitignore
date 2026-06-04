@@ -41,6 +41,10 @@ docs/supabase_migration.sql
 # Local presentation notes — not for repo
 docs/presentation_slides.md
 
+# Build artifacts — large files
+docs/*.apk
+docs/*.ipa
+
 # Dead code
 src/bridges/ModelBridge.js
 
