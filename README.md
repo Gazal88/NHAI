@@ -132,17 +132,13 @@ set ANDROID_SERIAL=YOUR_DEVICE_SERIAL
 npm run android
 ```
 
-**Android APK (pre-built):** [Download](https://expo.dev/artifacts/eas/hqQwvEeGXCJ9XBJpyuR3T9.apk)
-
 ### 5. Run on iOS (EAS cloud build — no Mac needed)
 
 ```bat
 npx eas-cli@latest build --platform ios --profile preview
 ```
 
-Upload the `.ipa` to appetize.io.
-
-**iOS live demo:** [https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq](https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq)
+**iOS live demo on Appetize.io:** [https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq](https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq)
 
 ---
 
