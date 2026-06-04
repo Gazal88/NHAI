@@ -38,7 +38,7 @@ src/services/Config.js
 
 
 # Biometric calibration parameters — device-specific tuning
-src/services/biometric.config.js
+# src/services/biometric.config.js
 
 
 # Internal SQL tooling
