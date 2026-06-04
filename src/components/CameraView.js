@@ -172,10 +172,11 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const { resize } = useResizePlugin();
 
   // Core models — liveness + recognition always loaded
-  const livenessPlugin    = useTensorflowModel(require('../../assets/models/liveness.tflite'), []);
-  const recognitionPlugin = useTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), []);
+  // useAssetManager: true is required for release APK builds on Android
+  const livenessPlugin    = useTensorflowModel(require('../../assets/models/liveness.tflite'), [{ useAssetManager: true }]);
+  const recognitionPlugin = useTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), [{ useAssetManager: true }]);
   // BlazeFace — optional, only used for faceDetected indicator
-  const blazefacePlugin   = useTensorflowModel(require('../../assets/models/blazeface.tflite'), []);
+  const blazefacePlugin   = useTensorflowModel(require('../../assets/models/blazeface.tflite'), [{ useAssetManager: true }]);
 
   const livenessModel    = livenessPlugin.state    === 'loaded' ? livenessPlugin.model    : null;
   const recognitionModel = recognitionPlugin.state === 'loaded' ? recognitionPlugin.model : null;

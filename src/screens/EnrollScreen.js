@@ -114,7 +114,7 @@ export default function EnrollScreen({ initialUnlocked = false, onDone }) {
             <Text style={styles.primaryBtnText}>Unlock</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.pinFooter}>Only authorised administrators can enrol workers</Text>
+        <Text style={styles.pinFooter}>Only authorised administrators can enroll workers</Text>
       </KeyboardAvoidingView>
     );
   }
@@ -134,7 +134,7 @@ export default function EnrollScreen({ initialUnlocked = false, onDone }) {
         <View style={styles.topBar}>
           <View>
             <Text style={styles.topBarSub}>Admin</Text>
-            <Text style={styles.topBarTitle}>Enrol Worker</Text>
+            <Text style={styles.topBarTitle}>Enroll Worker</Text>
           </View>
           <View style={styles.topBarRight}>
             <View style={styles.adminBadge}>
