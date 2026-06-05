@@ -48,6 +48,8 @@ Launch Screen (3s)
 | Admin | PIN | `ADMIN1234` |
 
 ---
+## Demo video
+https://drive.google.com/file/d/1vYEimk2xVWAVEfNdGowVk-KVOleTsKzf/view?usp=drive_link
 
 ## Tech Stack
 
