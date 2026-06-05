@@ -171,18 +171,16 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const device = useCameraDevice('front');
   const { resize } = useResizePlugin();
 
-  // In release APK, require() returns an asset ID that resolves incorrectly.
-  // Use Platform-specific loading: direct file path for Android release, require() for dev.
-  const { Platform } = require('react-native');
-  const isDev = __DEV__;
-
-  const livenessSource    = isDev
+  // In release APK, require() resolves to an asset:/// URI that AssetLoader can't open.
+  // Use file:///android_asset/ path in release (models copied to android/app/src/main/assets/).
+  // In dev/USB builds __DEV__ is true so require() works via Metro.
+  const livenessSource    = __DEV__
     ? require('../../assets/models/liveness.tflite')
     : { url: 'file:///android_asset/liveness.tflite' };
-  const recognitionSource = isDev
+  const recognitionSource = __DEV__
     ? require('../../assets/models/mobilefacenet.tflite')
     : { url: 'file:///android_asset/mobilefacenet.tflite' };
-  const blazefaceSource   = isDev
+  const blazefaceSource   = __DEV__
     ? require('../../assets/models/blazeface.tflite')
     : { url: 'file:///android_asset/blazeface.tflite' };
 
