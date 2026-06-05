@@ -8,10 +8,11 @@ web-build/
 expo-env.d.ts
 
 # Native — let EAS Prebuild regenerate these
-android/
-ios/
+# android/ and ios/ are NOT gitignored — we need android/app/src/main/assets/ for TFLite models
+# android/
+# ios/
 
-# Native build artifacts
+# Native build artifacts only
 *.orig.*
 *.jks
 *.p8
