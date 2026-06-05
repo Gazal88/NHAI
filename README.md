@@ -121,7 +121,7 @@ Edit `src/services/Config.js` with your Supabase URL and anon key.
 
 ### 4. Run on Android
 
-> **First-time setup:** Create `android/local.properties` pointing to your Android SDK (this file is gitignored — must be created on each machine):
+> **First-time setup:** Create `android/local.properties` pointing to your Android SDK:
 > ```bat
 > echo sdk.dir=C:\Users\%USERNAME%\AppData\Local\Android\Sdk > android\local.properties
 > ```
@@ -132,11 +132,7 @@ set ANDROID_SERIAL=YOUR_DEVICE_SERIAL
 npm run android
 ```
 
-### 5. Run on iOS (EAS cloud build — no Mac needed)
-
-```bat
-npx eas-cli@latest build --platform ios --profile preview
-```
+### 5. Run on iOS
 
 **iOS live demo on Appetize.io:** [https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq](https://appetize.io/app/b_q33rh2awdoepy6sylvobkmvrwq)
 

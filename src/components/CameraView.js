@@ -8,8 +8,8 @@ const BLAZEFACE_INPUT_SIZE = 128;
 const BLAZEFACE_ANCHORS_COUNT = 896;
 const BLAZEFACE_SCORE_THRESHOLD = 0.35;
 
-const BLAZEFACE_TICK_MS = 250;  // face detection: every 250ms
-const INFERENCE_TICK_MS = 350;  // liveness + embedding: every 350ms
+const BLAZEFACE_TICK_MS = 250;
+const INFERENCE_TICK_MS = 350;
 
 // ─── BlazeFace anchor generation ──────────────────────────────────────────
 function generateBlazeFaceAnchors() {
@@ -28,16 +28,13 @@ function generateBlazeFaceAnchors() {
 }
 
 // ─── Worklet helpers ───────────────────────────────────────────────────────
-/** Applies sigmoid to convert raw logits to probabilities. */
 const sigmoid = (x) => {
   'worklet';
-  if (x >= 0) {
-    return 1.0 / (1.0 + Math.exp(-x));
-  }
-  // Numerically stable version for negative values
+  if (x >= 0) return 1.0 / (1.0 + Math.exp(-x));
   const e = Math.exp(x);
   return e / (1.0 + e);
 };
+
 const sliceBuffer = (array) => {
   'worklet';
   return array.buffer.slice(array.byteOffset, array.byteOffset + array.byteLength);
@@ -46,14 +43,8 @@ const sliceBuffer = (array) => {
 const firstValue = (buffer, dataType) => {
   'worklet';
   if (buffer == null) return null;
-  if (dataType === 'uint8') {
-    const v = new Uint8Array(buffer);
-    return v.length > 0 ? v[0] / 255 : null;
-  }
-  if (dataType === 'int8') {
-    const v = new Int8Array(buffer);
-    return v.length > 0 ? (v[0] + 128) / 255 : null;
-  }
+  if (dataType === 'uint8') { const v = new Uint8Array(buffer); return v.length > 0 ? v[0] / 255 : null; }
+  if (dataType === 'int8')  { const v = new Int8Array(buffer);  return v.length > 0 ? (v[0] + 128) / 255 : null; }
   const v = new Float32Array(buffer);
   return v.length > 0 ? v[0] : null;
 };
@@ -71,7 +62,6 @@ const bufferToNumberArray = (buffer, dataType, maxLength) => {
   return result;
 };
 
-// Parse BlazeFace output — only used for faceDetected indicator
 const parseBlazeface = (scoresBuffer, boxesBuffer, anchors) => {
   'worklet';
   if (!scoresBuffer || !boxesBuffer) return null;
@@ -171,21 +161,6 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const device = useCameraDevice('front');
   const { resize } = useResizePlugin();
 
-  // In release APK, require() resolves to an asset:/// URI that AssetLoader can't open.
-  // Use file:///android_asset/ path in release (models copied to android/app/src/main/assets/).
-  // In dev/USB builds __DEV__ is true so require() works via Metro.
-  const livenessSource    = __DEV__
-    ? require('../../assets/models/liveness.tflite')
-    : { url: 'file:///android_asset/liveness.tflite' };
-  const recognitionSource = __DEV__
-    ? require('../../assets/models/mobilefacenet.tflite')
-    : { url: 'file:///android_asset/mobilefacenet.tflite' };
-  const blazefaceSource   = __DEV__
-    ? require('../../assets/models/blazeface.tflite')
-    : { url: 'file:///android_asset/blazeface.tflite' };
-
-  // Always use require() — works in dev via Metro, works in release via bundled assets
-  // The __DEV__ split was tried but android_asset path wasn't loading either
   const livenessPlugin    = useTensorflowModel(require('../../assets/models/liveness.tflite'), []);
   const recognitionPlugin = useTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), []);
   const blazefacePlugin   = useTensorflowModel(require('../../assets/models/blazeface.tflite'), []);
@@ -205,7 +180,6 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const reportInference  = useMemo(() => Worklets.createRunOnJS((r) => onInference?.(r)), [Worklets, onInference]);
   const lastBlazefaceAt  = useMemo(() => Worklets.createSharedValue(0), [Worklets]);
   const lastInferenceAt  = useMemo(() => Worklets.createSharedValue(0), [Worklets]);
-  // Shared face-detected flag — updated by BlazeFace tick, read by inference tick
   const faceDetectedFlag = useMemo(() => Worklets.createSharedValue(false), [Worklets]);
 
   useEffect(() => {
@@ -221,25 +195,19 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
 
       const now = Date.now();
 
-      // ── Tick A: BlazeFace — fast, runs every 250ms ─────────────────────
-      // Only updates faceDetectedFlag. Does NOT affect liveness/recognition input.
       if (boxedBlazeface != null && now - lastBlazefaceAt.value >= BLAZEFACE_TICK_MS) {
         lastBlazefaceAt.value = now;
         try {
           const bf = boxedBlazeface.unbox();
           const bfInput = resize(frame, {
             scale: { width: BLAZEFACE_INPUT_SIZE, height: BLAZEFACE_INPUT_SIZE },
-            pixelFormat: 'rgb',
-            dataType: 'float32',
+            pixelFormat: 'rgb', dataType: 'float32',
           });
           const bfOut = bf.runSync([sliceBuffer(bfInput)]);
           faceDetectedFlag.value = parseBlazeface(bfOut[0], bfOut[1], blazefaceAnchors.value) !== null;
-        } catch (_) {
-          // BlazeFace failed this tick — keep last known value
-        }
+        } catch (_) {}
       }
 
-      // ── Tick B: Liveness + Recognition — every 600ms ───────────────────
       if (now - lastInferenceAt.value < INFERENCE_TICK_MS) return;
       lastInferenceAt.value = now;
 
@@ -247,39 +215,28 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
         const liveness    = boxedLiveness.unbox();
         const recognition = boxedRecognition.unbox();
 
-        // Full frame resize — no crop
         const livenessInput = resize(frame, {
-          scale:       { width: livenessSpec.width, height: livenessSpec.height },
-          pixelFormat: livenessSpec.pixelFormat,
-          dataType:    livenessSpec.dataType,
+          scale: { width: livenessSpec.width, height: livenessSpec.height },
+          pixelFormat: livenessSpec.pixelFormat, dataType: livenessSpec.dataType,
         });
         const livenessOutput = liveness.runSync([sliceBuffer(livenessInput)]);
-        // Apply sigmoid to convert raw logit to probability [0,1]
         const rawLogit = firstValue(livenessOutput[0], livenessSpec.outputType);
         const livenessScore = rawLogit == null ? null : sigmoid(rawLogit);
 
         const recognitionInput = resize(frame, {
-          scale:       { width: recognitionSpec.width, height: recognitionSpec.height },
-          pixelFormat: recognitionSpec.pixelFormat,
-          dataType:    recognitionSpec.dataType,
+          scale: { width: recognitionSpec.width, height: recognitionSpec.height },
+          pixelFormat: recognitionSpec.pixelFormat, dataType: recognitionSpec.dataType,
         });
         const recognitionOutput = recognition.runSync([sliceBuffer(recognitionInput)]);
         const embedding = bufferToNumberArray(recognitionOutput[0], recognitionSpec.outputType, 512);
 
         reportInference({
-          ready:                true,
-          timestamp:            now,
-          livenessScore,
-          embedding,
+          ready: true, timestamp: now, livenessScore, embedding,
           recognitionThreshold: RECOGNITION_THRESHOLD,
-          faceDetected:         faceDetectedFlag.value,
+          faceDetected: faceDetectedFlag.value,
         });
       } catch (error) {
-        reportInference({
-          ready:     false,
-          timestamp: Date.now(),
-          error:     String(error?.message ?? error),
-        });
+        reportInference({ ready: false, timestamp: Date.now(), error: String(error?.message ?? error) });
       }
     },
     [
@@ -338,11 +295,8 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
 
 const styles = StyleSheet.create({
   placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEF0E8',
-    paddingHorizontal: 20,
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#EEF0E8', paddingHorizontal: 20,
   },
   icon:    { fontSize: 16, color: '#5C6B3A', fontWeight: '900', marginBottom: 10 },
   text:    { color: '#5C6B3A', fontSize: 12, fontWeight: '800', letterSpacing: 1.5, textAlign: 'center' },
