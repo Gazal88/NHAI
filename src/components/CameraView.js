@@ -184,9 +184,11 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
     ? require('../../assets/models/blazeface.tflite')
     : { url: 'file:///android_asset/blazeface.tflite' };
 
-  const livenessPlugin    = useTensorflowModel(livenessSource, []);
-  const recognitionPlugin = useTensorflowModel(recognitionSource, []);
-  const blazefacePlugin   = useTensorflowModel(blazefaceSource, []);
+  // Always use require() — works in dev via Metro, works in release via bundled assets
+  // The __DEV__ split was tried but android_asset path wasn't loading either
+  const livenessPlugin    = useTensorflowModel(require('../../assets/models/liveness.tflite'), []);
+  const recognitionPlugin = useTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), []);
+  const blazefacePlugin   = useTensorflowModel(require('../../assets/models/blazeface.tflite'), []);
 
   const livenessModel    = livenessPlugin.state    === 'loaded' ? livenessPlugin.model    : null;
   const recognitionModel = recognitionPlugin.state === 'loaded' ? recognitionPlugin.model : null;
