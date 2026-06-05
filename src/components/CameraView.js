@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 
 // ─── Constants ────────────────────────────────────────────────────────────
