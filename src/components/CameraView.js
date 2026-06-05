@@ -171,10 +171,24 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const device = useCameraDevice('front');
   const { resize } = useResizePlugin();
 
-  // Direct require — works in dev/USB builds via Metro asset server
-  const livenessPlugin    = useTensorflowModel(require('../../assets/models/liveness.tflite'), []);
-  const recognitionPlugin = useTensorflowModel(require('../../assets/models/mobilefacenet.tflite'), []);
-  const blazefacePlugin   = useTensorflowModel(require('../../assets/models/blazeface.tflite'), []);
+  // In release APK, require() returns an asset ID that resolves incorrectly.
+  // Use Platform-specific loading: direct file path for Android release, require() for dev.
+  const { Platform } = require('react-native');
+  const isDev = __DEV__;
+
+  const livenessSource    = isDev
+    ? require('../../assets/models/liveness.tflite')
+    : { url: 'file:///android_asset/liveness.tflite' };
+  const recognitionSource = isDev
+    ? require('../../assets/models/mobilefacenet.tflite')
+    : { url: 'file:///android_asset/mobilefacenet.tflite' };
+  const blazefaceSource   = isDev
+    ? require('../../assets/models/blazeface.tflite')
+    : { url: 'file:///android_asset/blazeface.tflite' };
+
+  const livenessPlugin    = useTensorflowModel(livenessSource, []);
+  const recognitionPlugin = useTensorflowModel(recognitionSource, []);
+  const blazefacePlugin   = useTensorflowModel(blazefaceSource, []);
 
   const livenessModel    = livenessPlugin.state    === 'loaded' ? livenessPlugin.model    : null;
   const recognitionModel = recognitionPlugin.state === 'loaded' ? recognitionPlugin.model : null;
