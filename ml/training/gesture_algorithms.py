@@ -1,9 +1,5 @@
 """
-gesture_algorithms.py — EAR Blink Detection + Head Pose Estimation
-Hackathon 7.0 | ML Lead (Person 1)
 
-These functions are tested in Python, then Person 2 ports them to TypeScript.
-Share this file with Person 2 at INT-2 (Day 7).
 
 Functions:
   - compute_ear(landmarks)          → {leftEAR, rightEAR, meanEAR, isBlinkFrame}

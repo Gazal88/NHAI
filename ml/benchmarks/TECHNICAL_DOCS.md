@@ -14,9 +14,8 @@ React Native App (Expo SDK 56)
     │     └── Tick B (350ms): Liveness + MobileFaceNet → score + embedding
     │
     ├── AuthScreen.js — verify attendance
-    │     ├── Active gesture challenge (blink / head turn, 3s window)
     │     ├── Liveness score gate (sigmoid > 0.55)
-    │     └── Face embedding match (dot product > 0.45)
+    │     └── Face embedding match (dot product > 0.75 strict)
     │
     ├── EnrollScreen.js — 5-frame enrollment
     │     └── Average 5 embeddings → store in SQLite
@@ -57,7 +56,7 @@ React Native App (Expo SDK 56)
 | Purpose | Bundled for future gesture expansion |
 | License | Apache 2.0 |
 
-**Status:** Bundled in assets but not active in the live inference path. Excluded from pipeline timing. A FaceMesh-based gesture detection experiment was removed due to memory instability on the target device. The active gesture system uses the liveness model score window instead.
+**Status:** Excluded from active inference paths to keep the memory footprint low and prevent OutOfMemory crashes on low-memory edge devices. Passive MobileNetV3 classification is used for liveness security instead.
 
 ---
 
@@ -88,7 +87,7 @@ React Native App (Expo SDK 56)
 **In the app:**
 - Sigmoid applied to raw logit in CameraView.js frame processor
 - Liveness gate at verify: sigmoid score > 0.55
-- Active challenge: 3s window, requires 2+ readings > 0.65
+- Dynamic verification: requires 2 consecutive high-confidence frames (sigmoid score > 0.65) to pass liveness verification.
 
 ---
 
@@ -110,8 +109,8 @@ React Native App (Expo SDK 56)
 **Similarity ranges:**
 - Same person (controlled): ~0.99
 - Different people (random): 0.00 to -0.18
-- App recognition threshold: 0.45 (tuned for real camera variation with lighting and angle differences)
-- Duplicate face guard (enrollment): 0.45
+- App recognition threshold: 0.75 (strict default for production accuracy)
+- Duplicate face guard (enrollment): 0.75
 
 **Enrollment:** 5 frames captured, embeddings averaged, stored as JSON in SQLite `workers.embedding` column.
 
@@ -204,7 +203,7 @@ No proprietary licenses. No additional licenses required.
 | Limitation | Severity | Notes |
 |---|---|---|
 | Liveness trained on synthetic data | Medium | Real-world spoof robustness not benchmarked on CelebA-Spoof. Sufficient for prototype demonstration. |
-| Recognition tested on controlled pairs | Medium | Same-person accuracy on real diverse faces unvalidated. App threshold tuned conservatively at 0.45. |
+| Recognition tested on controlled pairs | Medium | Same-person accuracy on real diverse faces unvalidated. App threshold set strictly at 0.75 for maximum security. |
 | iOS tested on Appetize.io simulator | Low | EAS cloud build produces real IPA. No Mac available for physical device testing. |
 | Identical twins | Low | Known limitation — admin override available. |
 | Extreme low-light (< 10 lux) | Low | UI prompts user to improve lighting. |

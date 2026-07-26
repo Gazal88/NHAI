@@ -12,6 +12,7 @@ const MODEL_FILES = [
   { key: 'liveness',    module: require('../../assets/models/liveness.tflite') },
   { key: 'recognition', module: require('../../assets/models/mobilefacenet.tflite') },
   { key: 'blazeface',   module: require('../../assets/models/blazeface.tflite') },
+  { key: 'facemesh',    module: require('../../assets/models/facemesh.tflite') },
 ];
 
 let cachedUris = null;

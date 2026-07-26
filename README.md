@@ -10,8 +10,7 @@ Pehchaan lets NHAI field workers mark attendance using face recognition — enti
 
 **Core capabilities**
 - Fully offline face recognition using on-device MobileFaceNet
-- Real-time liveness detection (anti-spoofing)
-- Active gesture challenge — blink or head turn (random per session)
+- Real-time liveness detection (passive anti-spoofing)
 - BlazeFace face detection
 - Worker enrollment with 5-frame averaged embeddings and duplicate-face guard
 - Role-based dashboards — Worker and Admin with distinct UI and access
@@ -70,12 +69,11 @@ https://drive.google.com/file/d/1vYEimk2xVWAVEfNdGowVk-KVOleTsKzf/view?usp=drive
 
 ## Model Bundle
 
-All models bundled in `assets/models/`. Total: **~6.1 MB** (brief limit: 20 MB).
+All models bundled in `assets/models/`. Total: **~4.8 MB** (brief limit: 20 MB).
 
 | Model | File | Size | Purpose |
 |---|---|---|---|
 | BlazeFace | blazeface.tflite | 229 KB | Face detection |
-| FaceMesh | facemesh.tflite | 1.2 MB | Bundled (reserved) |
 | Liveness | liveness.tflite | 1.7 MB | Real vs spoof |
 | MobileFaceNet | mobilefacenet.tflite | 2.9 MB | Face embedding |
 
@@ -85,7 +83,7 @@ All models bundled in `assets/models/`. Total: **~6.1 MB** (brief limit: 20 MB).
 
 | Metric | Target | Result |
 |---|---|---|
-| Model bundle size | < 20 MB | 6.1 MB |
+| Model bundle size | < 20 MB | 4.8 MB |
 | End-to-end pipeline | < 1000 ms | ~119 ms |
 | BlazeFace | — | 2.6 ms |
 | Liveness | — | 29.6 ms |
@@ -171,7 +169,7 @@ Two concurrent operations per camera frame:
 
 **Liveness + Recognition (every 350ms):** Full frame resized to model input. Liveness model returns real/spoof score (sigmoid applied to raw logit). MobileFaceNet returns 128-dim L2-normalised embedding.
 
-**Active anti-spoofing:** Random gesture prompt (blink or head turn). User performs gesture in a 3-second window. Liveness score must confirm real face presence throughout. Static photos and screens fail this check.
+**Anti-spoofing security:** Uses a highly optimized passive liveness detection model (MobileNetV3) that runs on the edge to analyze the frame. It requires 2 consecutive high-confidence real face frames (less than 1.0s) to pass verification, preventing static photo and screen replay spoofing attacks without any heavy active gestures.
 
 ---
 

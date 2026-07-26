@@ -1,11 +1,4 @@
-"""
-setup_verify.py — Day 1 Environment Verification
-Hackathon 7.0 | ML Lead (Person 1)
 
-Run this FIRST on Day 1.
-Verifies: GPU, PyTorch, all required packages, folder structure.
-Prints a clear PASS/FAIL for every check.
-"""
 
 import sys
 import os

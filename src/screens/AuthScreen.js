@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { logAttendance, logFailure, getTodayAttendanceByEmployee } from '../services/DatabaseService';
+import { logAttendance, logFailure, getTodayAttendanceByEmployee, getConfig } from '../services/DatabaseService';
 import CameraView from '../components/CameraView.js';
 import { C, FONT, RADIUS, SHADOW } from '../theme';
 import {
@@ -109,7 +109,13 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
   const [challengeProgress, setChallengeProgress] = useState(getInitialChallengeProgress);
   const [latestInference, setLatestInference] = useState(null);
   const [todayRecord, setTodayRecord] = useState(null);
+  const [useRealGestures, setUseRealGestures] = useState(false);
+  const [customThreshold, setCustomThreshold] = useState(null);
+  const [gestureState, setGestureState] = useState(0);
+
   const livenessWindowRef = useRef([]);
+  const challengeTimeoutRef = useRef(null);
+
   const greeting = getGreeting();
   const initials = getInitials(worker?.name);
   const isLocked = lockedUntil !== null && now < lockedUntil;
@@ -122,6 +128,25 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
       latestInference.embedding.length === 0);
   const verifyDisabled = verifying || isLocked ||
     (challengeArmed && (!challengeProgress.completed || !challengeProgress.gestureDetected));
+
+  const loadDynamicConfig = async () => {
+    try {
+      const thresh = await getConfig('recognition_threshold');
+      if (thresh) {
+        setCustomThreshold(parseFloat(thresh));
+      } else {
+        setCustomThreshold(null);
+      }
+      setUseRealGestures(false);
+    } catch (_) {
+      setUseRealGestures(false);
+      setCustomThreshold(null);
+    }
+  };
+
+  useEffect(() => {
+    loadDynamicConfig();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -162,37 +187,103 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
   useEffect(() => {
     if (!challengeArmed || challengeProgress.completed) return undefined;
 
-    const timer = setTimeout(() => {
+    challengeTimeoutRef.current = setTimeout(() => {
       const scores = livenessWindowRef.current;
-      console.log('[Challenge] scores during window:', scores.map(s => s.toFixed(3)).join(', '));
+      console.log('[Challenge] timeout fired, scores during window:', scores.map(s => s.toFixed(3)).join(', '));
 
       const validScores = scores.filter(s => s >= CHALLENGE_CONFIDENCE_MIN);
-      const hasLivePresence = validScores.length >= 2;
+      const isFallback = !useRealGestures || latestInference?.ear === null || latestInference?.yaw === null;
+
+      if (isFallback) {
+        const hasLivePresence = validScores.length >= 2;
+        if (hasLivePresence) {
+          setChallengeProgress({
+            completed: true,
+            status: 'Done',
+            detail: 'Check passed. Tap Mark Attendance.',
+            gestureDetected: true,
+          });
+          return;
+        }
+      }
+
+      // Gesture failure or low liveness
+      setChallengeArmed(false);
+      livenessWindowRef.current = [];
+      setGestureState(0);
+      const avgScore = scores.length > 0
+        ? (scores.reduce((a, b) => a + b, 0) / scores.length * 100).toFixed(0)
+        : 0;
+
+      setChallengeProgress({
+        completed: false,
+        status: 'Pending',
+        detail: isFallback
+          ? `Liveness too low (avg ${avgScore}%). Try again.`
+          : 'Gesture challenge timeout. Please perform the requested gesture within 3 seconds.',
+      });
+    }, ACTIVE_CHECK_MS);
+
+    return () => {
+      if (challengeTimeoutRef.current) {
+        clearTimeout(challengeTimeoutRef.current);
+        challengeTimeoutRef.current = null;
+      }
+    };
+  }, [challengeArmed, challengeProgress.completed, useRealGestures]);
+
+  // Real-time active gesture verification
+  useEffect(() => {
+    if (!challengeArmed || challengeProgress.completed) return;
+    if (!latestInference) return;
+
+    const { ear, yaw, livenessScore } = latestInference;
+
+    if (typeof livenessScore === 'number') {
+      livenessWindowRef.current.push(livenessScore);
+    }
+
+    if (!useRealGestures || ear === null || yaw === null) {
+      return;
+    }
+
+    const completeActiveChallenge = () => {
+      const scores = livenessWindowRef.current;
+      const validScores = scores.filter(s => s >= CHALLENGE_CONFIDENCE_MIN);
+      const hasLivePresence = validScores.length >= 1;
 
       if (hasLivePresence) {
         setChallengeProgress({
           completed: true,
           status: 'Done',
-          detail: 'Check passed. Tap Mark Attendance.',
+          detail: 'Gesture verified. Tap Mark Attendance.',
           gestureDetected: true,
         });
-      } else {
-        // Face not consistently detected as live — reset
-        setChallengeArmed(false);
-        livenessWindowRef.current = [];
-        const avgScore = scores.length > 0
-          ? (scores.reduce((a, b) => a + b, 0) / scores.length * 100).toFixed(0)
-          : 0;
-        setChallengeProgress({
-          completed: false,
-          status: 'Pending',
-          detail: `Liveness too low (avg ${avgScore}%). Make sure your face is clearly visible in good lighting and try again.`,
-        });
       }
-    }, ACTIVE_CHECK_MS);
+    };
 
-    return () => clearTimeout(timer);
-  }, [challengeArmed, challengeProgress.completed]);
+    if (challenge.id === 'blink') {
+      if (gestureState === 0 && ear >= 0.25) {
+        setGestureState(1);
+      } else if (gestureState === 1 && ear <= 0.21) {
+        setGestureState(2);
+      } else if (gestureState === 2 && ear >= 0.25) {
+        completeActiveChallenge();
+      }
+    } else if (challenge.id === 'turn_left') {
+      if (gestureState === 0 && yaw <= -18) {
+        setGestureState(1);
+      } else if (gestureState === 1 && yaw >= -10) {
+        completeActiveChallenge();
+      }
+    } else if (challenge.id === 'turn_right') {
+      if (gestureState === 0 && yaw >= 18) {
+        setGestureState(1);
+      } else if (gestureState === 1 && yaw <= 10) {
+        completeActiveChallenge();
+      }
+    }
+  }, [latestInference, challengeArmed, challengeProgress.completed, gestureState, useRealGestures, challenge.id]);
 
   const registerFailure = async (type, details = {}) => {
     await logFailure(type, {
@@ -217,6 +308,11 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
     setChallengeProgress(getInitialChallengeProgress());
     setLatestInference(null);
     livenessWindowRef.current = [];
+    setGestureState(0);
+    if (challengeTimeoutRef.current) {
+      clearTimeout(challengeTimeoutRef.current);
+      challengeTimeoutRef.current = null;
+    }
   };
 
   const getGPS = async () => {
@@ -249,8 +345,10 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
     }
 
     if (!challengeArmed) {
+      await loadDynamicConfig();
       setLatestInference(null);
       livenessWindowRef.current = [];
+      setGestureState(0);
       setChallengeProgress({
         completed: false,
         status: 'Watching',
@@ -314,10 +412,11 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
         return;
       }
 
+      const activeThreshold = customThreshold !== null ? customThreshold : RECOGNITION_THRESHOLD;
       const matchScore = cosineSimilarity(latestInference.embedding, storedEmbedding);
-      console.log(`[Verify] matchScore=${matchScore?.toFixed(4)} threshold=${RECOGNITION_THRESHOLD} embeddingLen=${latestInference.embedding.length} storedLen=${storedEmbedding.length}`);
+      console.log(`[Verify] matchScore=${matchScore?.toFixed(4)} threshold=${activeThreshold} embeddingLen=${latestInference.embedding.length} storedLen=${storedEmbedding.length}`);
 
-      if (matchScore === null || matchScore < RECOGNITION_THRESHOLD) {
+      if (matchScore === null || matchScore < activeThreshold) {
         await registerFailure('FACE_MATCH_FAILED', {
           challengeId: challenge.id,
           matchScore,
@@ -450,7 +549,7 @@ export default function AuthScreen({ worker: initialWorker, pendingCount = 0, on
 
       {/* ── Camera ── */}
       <View style={styles.cameraFrame}>
-        <CameraView ref={cameraRef} onInference={setLatestInference} />
+        <CameraView ref={cameraRef} onInference={setLatestInference} runGestureCheck={challengeArmed && useRealGestures} />
         {/* Face / model status overlay */}
         <View style={styles.cameraOverlay}>
           <View style={[

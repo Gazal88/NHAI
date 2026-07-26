@@ -1,15 +1,37 @@
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { getFailureLog } from '../services/DatabaseService';
+import { getFailureLog, getConfig, setConfig } from '../services/DatabaseService';
 import { useEffect, useState } from 'react';
 import Constants from 'expo-constants';
 import { C, FONT, RADIUS, SHADOW } from '../theme';
 
 export default function SettingsScreen({ onLogout }) {
   const [failureCount, setFailureCount] = useState(0);
+  const [threshold, setThreshold] = useState('0.75');
+  const [realGestures, setRealGestures] = useState(false);
 
   useEffect(() => {
     getFailureLog(100).then((rows) => setFailureCount(rows.length)).catch(() => {});
+
+    // Load configs from DB
+    getConfig('recognition_threshold').then((val) => {
+      if (val) setThreshold(val);
+    }).catch(() => {});
+
+    // Force real gestures to false to prevent OOM memory issues
+    setConfig('use_real_gestures', 'false').then(() => {
+      setRealGestures(false);
+    }).catch(() => {});
   }, []);
+
+  const updateThreshold = async (val) => {
+    setThreshold(val);
+    await setConfig('recognition_threshold', val);
+  };
+
+  const updateRealGestures = async (val) => {
+    setRealGestures(false);
+    await setConfig('use_real_gestures', 'false');
+  };
 
   const confirmLogout = () => Alert.alert(
     'Logout Admin',
@@ -27,6 +49,35 @@ export default function SettingsScreen({ onLogout }) {
         <Text style={styles.sectionLabel}>CURRENT SESSION</Text>
         <Text style={styles.sessionName}>Administrator</Text>
         <Text style={styles.sessionMeta}>Full access — enroll, manage, view all records</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionLabel}>DEMO & SECURITY SETTINGS</Text>
+        
+        {/* Match Threshold row */}
+        <View style={styles.settingItem}>
+          <Text style={styles.settingTitle}>Match Threshold</Text>
+          <Text style={styles.settingDescription}>
+            Min face similarity score required to mark attendance. Strict (0.75) is recommended for production.
+          </Text>
+          <View style={styles.pillContainer}>
+            {['0.75', '0.65', '0.45'].map((val) => {
+              const label = val === '0.75' ? 'Strict (0.75)' : val === '0.65' ? 'Standard (0.65)' : 'Demo (0.45)';
+              const isActive = threshold === val;
+              return (
+                <TouchableOpacity
+                  key={val}
+                  style={[styles.pillBtn, isActive && styles.pillBtnActive]}
+                  onPress={() => updateThreshold(val)}
+                >
+                  <Text style={[styles.pillBtnText, isActive && styles.pillBtnTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </View>
 
       <View style={styles.card}>
@@ -96,4 +147,12 @@ const styles = StyleSheet.create({
   clearBtnText: { color: C.error, fontSize: 13, fontWeight: FONT.bold },
   logoutBtn: { backgroundColor: C.error, borderRadius: RADIUS.lg, paddingVertical: 16, alignItems: 'center', marginTop: 8, ...SHADOW.md },
   logoutText: { color: '#FFFFFF', fontSize: 16, fontWeight: FONT.extraBold },
+  settingItem: { paddingVertical: 14 },
+  settingTitle: { color: C.textPrimary, fontSize: 14, fontWeight: FONT.bold, marginBottom: 4 },
+  settingDescription: { color: C.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 12 },
+  pillContainer: { flexDirection: 'row', gap: 8 },
+  pillBtn: { flex: 1, paddingVertical: 8, borderRadius: RADIUS.sm, backgroundColor: C.bg, alignItems: 'center', borderWidth: 1, borderColor: C.border },
+  pillBtnActive: { backgroundColor: C.adminPrimary, borderColor: C.adminPrimary },
+  pillBtnText: { color: C.textSecondary, fontSize: 11, fontWeight: FONT.bold },
+  pillBtnTextActive: { color: '#FFFFFF' },
 });

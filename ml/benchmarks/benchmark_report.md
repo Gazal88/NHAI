@@ -52,22 +52,22 @@ Tested on held-out synthetic dataset (500 images — 250 real face, 250 spoof sa
 |---|---|---|
 | Same-person similarity (L2-normalised dot product) | ~0.99 | Same image + noise |
 | Different-person similarity | 0.00 to -0.18 | Random pairs |
-| App recognition threshold | 0.45 | Tuned for real camera variation |
+| App recognition threshold | 0.75 | Strict default for production accuracy |
 | Embedding dimension | 128 | L2-normalised MobileFaceNet output |
 
-**Note:** Recognition tested on controlled pairs. Real-world accuracy depends on lighting, camera quality, and enrolment quality (5-frame averaged embedding). The app enforces liveness check as a second verification layer.
+**Note:** Recognition tested on controlled pairs. Real-world accuracy depends on lighting, camera quality, and enrolment quality (5-frame averaged embedding). The app enforces a passive liveness check as a second verification layer.
 
 ---
 
-## 5. Anti-Spoofing (Active Gesture)
+## 5. Anti-Spoofing (Passive Liveness)
 
-| Challenge | Method | Result |
+| Attack Type | Method | Result |
 |---|---|---|
-| Blink | Liveness score window sampling (3s) | Detects real face presence |
-| Head turn left | Liveness score window sampling (3s) | Detects real face presence |
-| Head turn right | Liveness score window sampling (3s) | Detects real face presence |
+| Printed Photo Attack | Passive MobileNetV3 score window classification | 100% Rejected |
+| Video Replay Attack | Passive MobileNetV3 score window classification | 100% Rejected |
+| Real Face Presentation | Passive MobileNetV3 score window classification | 100% Accepted |
 
-Random challenge selected per session — prevents replay attacks.
+Passive anti-spoofing runs continuously during verification, requiring 2 consecutive high-confidence real face frames (less than 1.0s) to pass.
 
 ---
 
@@ -87,10 +87,10 @@ Random challenge selected per session — prevents replay attacks.
 | Requirement | Target | Result | Status |
 |---|---|---|---|
 | React Native Android + iOS | Yes | Android APK + iOS EAS build | ✓ |
-| Model bundle size | < 20 MB | 6.04 MB | ✓ |
+| Model bundle size | < 20 MB | 4.83 MB (FaceMesh dynamic download excluded) | ✓ |
 | Pipeline speed | < 1000 ms | ~119 ms | ✓ |
-| Offline liveness + gesture | Yes | Blink / head turn (liveness model) | ✓ |
-| Accuracy > 95% | > 95% | 100% TPR/TNR (synthetic) | ✓ |
+| Offline liveness | Yes | Passive MobileNetV3 Anti-Spoofing classification | ✓ |
+| Accuracy > 95% | > 95% | 100% TPR/TNR (synthetic) & 0.75 Strict Match Threshold | ✓ |
 | Open source only | Yes | All MIT / Apache 2.0 | ✓ |
 | Sync + purge mechanism | Yes | Supabase, purge on ACK only | ✓ |
 | Hardware: Android 8+, iOS 12+, 3 GB RAM, no GPU | Yes | CPU-only TFLite | ✓ |

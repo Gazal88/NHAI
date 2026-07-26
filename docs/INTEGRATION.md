@@ -62,7 +62,6 @@ src/
 assets/
 └── models/
     ├── blazeface.tflite
-    ├── facemesh.tflite
     ├── liveness.tflite
     └── mobilefacenet.tflite
 ```

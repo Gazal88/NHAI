@@ -63,3 +63,8 @@ context.md
 
 # typescript
 *.tsbuildinfo
+
+# AI Workspace & Temp Assets
+.gemini/
+.tempmediaStorage/
+android/app/src/main/assets/facemesh.tflite

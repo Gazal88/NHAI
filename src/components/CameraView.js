@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ function generateBlazeFaceAnchors() {
       }
     }
   }
-  return anchors;
+  return new Float32Array(anchors);
 }
 
 // ─── Worklet helpers ───────────────────────────────────────────────────────
@@ -84,6 +84,52 @@ const parseBlazeface = (scoresBuffer, boxesBuffer, anchors) => {
   };
 };
 
+const LEFT_EYE_INDICES = [362, 385, 387, 263, 373, 380];
+const RIGHT_EYE_INDICES = [33, 160, 158, 133, 153, 144];
+
+const distance = (x1, y1, z1, x2, y2, z2) => {
+  'worklet';
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+  const dz = z1 - z2;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+};
+
+const computeEarForEye = (landmarks, indices) => {
+  'worklet';
+  const p = [];
+  for (let i = 0; i < indices.length; i++) {
+    const idx = indices[i];
+    p.push({
+      x: landmarks[idx * 3],
+      y: landmarks[idx * 3 + 1],
+      z: landmarks[idx * 3 + 2]
+    });
+  }
+  const v1 = distance(p[1].x, p[1].y, p[1].z, p[5].x, p[5].y, p[5].z);
+  const v2 = distance(p[2].x, p[2].y, p[2].z, p[4].x, p[4].y, p[4].z);
+  const h = distance(p[0].x, p[0].y, p[0].z, p[3].x, p[3].y, p[3].z);
+  return (v1 + v2) / (2.0 * h + 1e-9);
+};
+
+const computeEar = (landmarks) => {
+  'worklet';
+  const leftEar = computeEarForEye(landmarks, LEFT_EYE_INDICES);
+  const rightEar = computeEarForEye(landmarks, RIGHT_EYE_INDICES);
+  return (leftEar + rightEar) / 2.0;
+};
+
+const computeYaw = (landmarks) => {
+  'worklet';
+  const noseX = landmarks[1 * 3];
+  const leftFaceX = landmarks[234 * 3];
+  const rightFaceX = landmarks[454 * 3];
+  const midX = (leftFaceX + rightFaceX) / 2.0;
+  const halfWidth = (rightFaceX - leftFaceX) / 2.0 + 1e-9;
+  const offset = (noseX - midX) / halfWidth;
+  return -offset * 45.0;
+};
+
 // ─── Tensor spec helper ────────────────────────────────────────────────────
 const getTensorSpec = (model, fallback) => {
   const input = model?.inputs?.[0];
@@ -125,7 +171,7 @@ function useNativeCameraModules() {
 }
 
 // ─── Public component ──────────────────────────────────────────────────────
-const CameraView = forwardRef(function CameraView({ onInference }, ref) {
+const CameraView = forwardRef(function CameraView({ onInference, runGestureCheck }, ref) {
   const cameraModules = useNativeCameraModules();
 
   if (!cameraModules) {
@@ -138,13 +184,13 @@ const CameraView = forwardRef(function CameraView({ onInference }, ref) {
     );
   }
 
-  return <CameraPreview ref={ref} cameraModules={cameraModules} onInference={onInference} />;
+  return <CameraPreview ref={ref} cameraModules={cameraModules} onInference={onInference} runGestureCheck={runGestureCheck} />;
 });
 
 export default CameraView;
 
 // ─── CameraPreview (inner) ─────────────────────────────────────────────────
-const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInference }, ref) {
+const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInference, runGestureCheck }, ref) {
   const {
     Camera,
     useCameraDevice,
@@ -172,9 +218,16 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
   const boxedLiveness    = useMemo(() => livenessModel    ? NitroModules.box(livenessModel)    : null, [NitroModules, livenessModel]);
   const boxedRecognition = useMemo(() => recognitionModel ? NitroModules.box(recognitionModel) : null, [NitroModules, recognitionModel]);
   const boxedBlazeface   = useMemo(() => blazefaceModel   ? NitroModules.box(blazefaceModel)   : null, [NitroModules, blazefaceModel]);
+  const boxedFacemesh    = null;
 
   const livenessSpec    = useMemo(() => getTensorSpec(livenessModel,    { width: 224, height: 224 }), [livenessModel]);
   const recognitionSpec = useMemo(() => getTensorSpec(recognitionModel, { width: 112, height: 112 }), [recognitionModel]);
+  const facemeshSpec     = { width: 192, height: 192, dataType: 'float32', pixelFormat: 'rgb', outputType: 'float32' };
+
+  const runGestureCheckShared = useMemo(() => Worklets.createSharedValue(false), [Worklets]);
+  useEffect(() => {
+    runGestureCheckShared.value = !!runGestureCheck;
+  }, [runGestureCheck, runGestureCheckShared]);
 
   const blazefaceAnchors = useMemo(() => Worklets.createSharedValue(generateBlazeFaceAnchors()), [Worklets]);
   const reportInference  = useMemo(() => Worklets.createRunOnJS((r) => onInference?.(r)), [Worklets, onInference]);
@@ -208,7 +261,8 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
         } catch (_) {}
       }
 
-      if (now - lastInferenceAt.value < INFERENCE_TICK_MS) return;
+      const tickMs = runGestureCheckShared.value ? 120 : INFERENCE_TICK_MS;
+      if (now - lastInferenceAt.value < tickMs) return;
       lastInferenceAt.value = now;
 
       try {
@@ -230,21 +284,42 @@ const CameraPreview = forwardRef(function CameraPreview({ cameraModules, onInfer
         const recognitionOutput = recognition.runSync([sliceBuffer(recognitionInput)]);
         const embedding = bufferToNumberArray(recognitionOutput[0], recognitionSpec.outputType, 512);
 
+        let ear = null;
+        let yaw = null;
+
+        if (runGestureCheckShared.value && boxedFacemesh != null) {
+          try {
+            const facemesh = boxedFacemesh.unbox();
+            const facemeshInput = resize(frame, {
+              scale: { width: facemeshSpec.width, height: facemeshSpec.height },
+              pixelFormat: facemeshSpec.pixelFormat, dataType: facemeshSpec.dataType,
+            });
+            const facemeshOutput = facemesh.runSync([sliceBuffer(facemeshInput)]);
+            const landmarks = bufferToNumberArray(facemeshOutput[0], facemeshSpec.outputType, 1404);
+            if (landmarks && landmarks.length >= 1404) {
+              ear = computeEar(landmarks);
+              yaw = computeYaw(landmarks);
+            }
+          } catch (_) {}
+        }
+
         reportInference({
           ready: true, timestamp: now, livenessScore, embedding,
           recognitionThreshold: RECOGNITION_THRESHOLD,
           faceDetected: faceDetectedFlag.value,
+          ear,
+          yaw,
         });
       } catch (error) {
         reportInference({ ready: false, timestamp: Date.now(), error: String(error?.message ?? error) });
       }
     },
     [
-      boxedLiveness, boxedRecognition, boxedBlazeface,
+      boxedLiveness, boxedRecognition, boxedBlazeface, boxedFacemesh,
       blazefaceAnchors, faceDetectedFlag,
       lastBlazefaceAt, lastInferenceAt,
-      livenessSpec, recognitionSpec,
-      reportInference, resize,
+      livenessSpec, recognitionSpec, facemeshSpec,
+      reportInference, resize, runGestureCheckShared,
     ]
   );
 

@@ -1,8 +1,3 @@
-"""
-train_liveness.py — MobileNetV3-Small Liveness Classifier
-Hackathon 7.0 | ML Lead (Person 1)
-FIXED VERSION — correct train/val split
-"""
 
 import os
 import time

@@ -205,7 +205,7 @@ export async function findPotentialDuplicateWorker({
   employeeId,
   name,
   embedding,
-  threshold = 0.45,
+  threshold = 0.75,
 }) {
   requireDB();
   const targetEmployeeId = employeeId.trim().toUpperCase();
@@ -389,12 +389,9 @@ export async function getUnsyncedRecords() {
 
 export async function deleteSynced() {
   requireDB();
-  // Keep synced records for 24 hours so HistoryScreen can show "Synced" status.
-  // Only purge records that were synced more than 24h ago.
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  // Purge synced records immediately as required by hackathon specifications
   await db.runAsync(
-    'DELETE FROM attendance WHERE synced = 1 AND timestamp < ?',
-    [cutoff]
+    'DELETE FROM attendance WHERE synced = 1'
   );
 }
 

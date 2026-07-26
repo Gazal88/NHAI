@@ -1,6 +1,4 @@
 """
-export_mobilefacenet.py — Export MobileFaceNet to TFLite
-Hackathon 7.0 | ML Lead (Person 1)
 
 Uses MobileNetV2 backbone with 128-dim embedding head.
 Weights: ./training/weights/mobilefacenet.pth

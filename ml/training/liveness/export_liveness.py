@@ -1,7 +1,3 @@
-"""
-export_liveness_v2.py — Convert liveness ONNX to TFLite INT8
-Hackathon 7.0 | ML Lead (Person 1)
-"""
 
 import os
 import time

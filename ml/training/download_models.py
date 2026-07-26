@@ -1,6 +1,4 @@
 """
-download_models.py — Download pre-trained models for Hackathon 7.0
-Hackathon 7.0 | ML Lead (Person 1)
 
 Downloads:
   1. BlazeFace (face detection) — MediaPipe GitHub
@@ -8,7 +6,7 @@ Downloads:
   3. MobileFaceNet pre-trained weights (.pth) — GitHub
 
 All models are open-source (Apache 2.0 / MIT).
-Run this script on Day 1-2.
+
 """
 
 import os
